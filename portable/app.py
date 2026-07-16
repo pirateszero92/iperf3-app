@@ -6,6 +6,7 @@ import sys
 import socket
 import webbrowser
 import uuid
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -166,6 +167,16 @@ async def health():
 @app.get("/api/server/status")
 async def get_server_status():
     return {"status": "stopped"}
+
+@app.websocket("/ws/server")
+async def server_ws(websocket: WebSocket):
+    await websocket.accept()
+    await websocket.send_json({"type": "status", "status": "stopped", "config": {}})
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
 
 @app.post("/api/client/run")
 async def run_client(config: ClientConfig):
@@ -353,9 +364,8 @@ def main():
     print(" Close this window/press Ctrl+C to exit.")
     print("=" * 60)
 
-    # Open user's default browser after 1.5 seconds
-    loop = asyncio.get_event_loop()
-    loop.call_later(1.5, lambda: webbrowser.open(url))
+    # Open user's default browser after 1.5 seconds in a background thread
+    threading.Timer(1.5, lambda: webbrowser.open(url)).start()
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 

@@ -53,7 +53,7 @@ if not IPERF3_PATH.exists():
 # ---------------------------------------------------------------------------
 
 # Save history to local directory where the exe is run from
-RUN_DIR = Path(sys.argv[0]).parent if getattr(sys.is_packaged, 'frozen', False) else Path(__file__).parent
+RUN_DIR = Path(sys.argv[0]).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 HISTORY_FILE = RUN_DIR / "iperf3_history.json"
 
 def load_history() -> list:

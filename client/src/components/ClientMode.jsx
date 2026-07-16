@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import LiveChart from './LiveChart'
 
 const DEFAULT = {
@@ -16,6 +16,52 @@ export default function ClientMode({ onComplete }) {
   const [summary, setSummary]     = useState(null)
   const [command, setCommand]     = useState('')
   const wsRef = useRef(null)
+
+  const [savedTargets, setSavedTargets] = useState(() => {
+    try {
+      const saved = localStorage.getItem('iperf3_saved_targets')
+      return saved ? JSON.parse(saved) : []
+    } catch (e) {
+      return []
+    }
+  })
+
+  const saveTarget = () => {
+    if (!cfg.host.trim()) {
+      alert('Please fill in a target host first!')
+      return
+    }
+    const label = window.prompt("Enter a label/name for this configuration:", cfg.host)
+    if (label === null) return
+
+    const newTarget = {
+      id: Date.now().toString(),
+      label: label.trim() || cfg.host,
+      config: { ...cfg }
+    }
+
+    const updated = [...savedTargets, newTarget]
+    setSavedTargets(updated)
+    localStorage.setItem('iperf3_saved_targets', JSON.stringify(updated))
+  }
+
+  const editTarget = (id) => {
+    const target = savedTargets.find(t => t.id === id)
+    if (!target) return
+    const newLabel = window.prompt("Edit label/name:", target.label)
+    if (newLabel === null) return
+
+    const updated = savedTargets.map(t => t.id === id ? { ...t, label: newLabel.trim() || t.label } : t)
+    setSavedTargets(updated)
+    localStorage.setItem('iperf3_saved_targets', JSON.stringify(updated))
+  }
+
+  const deleteTarget = (id) => {
+    if (!window.confirm("Delete this saved target?")) return
+    const updated = savedTargets.filter(t => t.id !== id)
+    setSavedTargets(updated)
+    localStorage.setItem('iperf3_saved_targets', JSON.stringify(updated))
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const addLog = (text, type = '') =>
@@ -136,9 +182,10 @@ export default function ClientMode({ onComplete }) {
       </div>
 
       <div className="client-layout">
-        {/* ── Config card ── */}
-        <div className="card config-card">
-          <h2 className="card-title">⚙️ Configuration</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: '100%' }}>
+          {/* ── Config card ── */}
+          <div className="card config-card">
+            <h2 className="card-title">⚙️ Configuration</h2>
 
           {/* Target host */}
           <div className="form-group">
@@ -305,6 +352,80 @@ export default function ClientMode({ onComplete }) {
             </div>
           )}
         </div>
+
+        {/* ── Saved Targets card ── */}
+        <div className="card">
+          <h2 className="card-title">📌 Saved Configurations</h2>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto', marginBottom: '16px' }}>
+            {savedTargets.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', padding: '16px 0', lineHeight: 1.6 }}>
+                No saved configurations.<br />Setup your config and click save below.
+              </div>
+            ) : (
+              savedTargets.map(t => (
+                <div 
+                  key={t.id} 
+                  onClick={() => setCfg(t.config)}
+                  style={{
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '8px 12px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
+                    e.currentTarget.style.borderColor = 'var(--cyan)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)'
+                    e.currentTarget.style.borderColor = 'var(--border)'
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden', width: '70%' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {t.label}
+                    </span>
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {t.config.host}:{t.config.port} • {t.config.protocol.toUpperCase()} {t.config.parallel > 1 ? `(x${t.config.parallel})` : ''}
+                    </span>
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button 
+                      className="btn-icon" 
+                      title="Edit name"
+                      onClick={e => { e.stopPropagation(); editTarget(t.id); }}
+                    >
+                      ✏️
+                    </button>
+                    <button 
+                      className="btn-icon danger" 
+                      title="Delete"
+                      onClick={e => { e.stopPropagation(); deleteTarget(t.id); }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <button 
+            className="btn btn-ghost btn-full" 
+            onClick={saveTarget}
+            disabled={isRunning || !cfg.host.trim()}
+          >
+            ＋ Save Current Configuration
+          </button>
+        </div>
+      </div>
 
         {/* ── Results panel ── */}
         <div className="results-panel">

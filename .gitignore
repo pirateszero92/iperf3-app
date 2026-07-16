@@ -1,0 +1,22 @@
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+*.local
+package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# App Data
+server/data/
+client/data/
+data/
+
+# OS Files
+.DS_Store
+Thumbs.db

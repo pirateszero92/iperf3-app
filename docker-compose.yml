@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./server
+    ports:
+      - "8000:8000"
+    volumes:
+      - history_data:/app/data
+    restart: unless-stopped
+    networks:
+      - iperf3-net
+
+  frontend:
+    build:
+      context: ./client
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - iperf3-net
+    restart: unless-stopped
+
+volumes:
+  history_data:
+
+networks:
+  iperf3-net:
+    driver: bridge

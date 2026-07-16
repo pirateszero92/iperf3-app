@@ -7,7 +7,7 @@ import socket
 import webbrowser
 import uuid
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -205,7 +205,7 @@ async def run_client(config: ClientConfig):
         "config": config.model_dump(),
         "command": " ".join(cmd),
         "status": "pending",
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
     }
     asyncio.create_task(_run_client_test(test_id, cmd, config))
     # Return formatted command for display, hiding full exe path
@@ -247,7 +247,7 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
             await manager.broadcast(channel, {
                 "type": "log",
                 "message": text,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
             parsed = parse_interval(text)
@@ -287,7 +287,7 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
                 "intervals": history_intervals,
                 "summary": summary,
                 "started_at": active_tests[test_id]["started_at"],
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
             }
             history = load_history()
             history.insert(0, entry)

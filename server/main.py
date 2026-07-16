@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -168,7 +168,7 @@ class ClientConfig(BaseModel):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 # ---------------------------------------------------------------------------
 # Server Mode
@@ -226,7 +226,7 @@ async def stop_server():
     await manager.broadcast("server", {
         "type": "stopped",
         "message": "Server stopped by user",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     return {"status": "stopped"}
 
@@ -236,7 +236,7 @@ async def _stream_server(proc: asyncio.subprocess.Process):
     await manager.broadcast("server", {
         "type": "started",
         "message": "iPerf3 server is listening…",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     async for raw in proc.stdout:
         text = raw.decode(errors="replace").strip()
@@ -244,12 +244,12 @@ async def _stream_server(proc: asyncio.subprocess.Process):
             await manager.broadcast("server", {
                 "type": "log",
                 "message": text,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
     await manager.broadcast("server", {
         "type": "stopped",
         "message": "Server process ended",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
 
@@ -294,7 +294,7 @@ async def run_client(config: ClientConfig):
         "config": config.model_dump(),
         "command": " ".join(cmd),
         "status": "pending",
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
     }
     asyncio.create_task(_run_client_test(test_id, cmd, config))
     return {"test_id": test_id, "command": " ".join(cmd)}
@@ -326,7 +326,7 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
             await manager.broadcast(channel, {
                 "type": "log",
                 "message": text,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
             parsed = parse_interval(text)
@@ -369,7 +369,7 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
                 "intervals": history_intervals,
                 "summary": summary,
                 "started_at": active_tests[test_id]["started_at"],
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
             }
             history = load_history()
             history.insert(0, entry)

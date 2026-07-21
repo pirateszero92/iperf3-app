@@ -3,7 +3,7 @@ services:
     build:
       context: ./server
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - history_data:/app/data
     restart: unless-stopped

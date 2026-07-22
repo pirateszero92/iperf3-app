@@ -7,6 +7,9 @@ services:
     volumes:
       - history_data:/app/data
     restart: unless-stopped
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     networks:
       - iperf3-net
 

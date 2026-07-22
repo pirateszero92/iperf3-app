@@ -468,7 +468,7 @@ active_traces: dict[str, dict] = {}
 @app.post("/api/trace/run")
 async def run_trace(config: TraceConfig):
     trace_id = str(uuid.uuid4())
-    cmd = ["traceroute", "-I", "-n", "-m", str(config.max_hops), "-w", "2", config.host]
+    cmd = ["stdbuf", "-oL", "traceroute", "-I", "-n", "-m", str(config.max_hops), "-w", "2", config.host]
 
     active_traces[trace_id] = {
         "config": config.model_dump(),

@@ -430,9 +430,35 @@ async def _run_trace_task(trace_id: str, cmd: list):
         await proc.wait()
         if trace_id in active_traces:
             active_traces[trace_id]["status"] = "complete"
+
+        valid_rtts = [h["avg_rtt"] for h in hops if h.get("avg_rtt") is not None]
+        trace_summary = {
+            "total_hops": len(hops),
+            "min_latency": min(valid_rtts) if valid_rtts else None,
+            "target_latency": valid_rtts[-1] if valid_rtts else None,
+        }
+
+        entry = {
+            "id": trace_id,
+            "type": "trace",
+            "config": config.model_dump(),
+            "command": " ".join(cmd),
+            "hops": hops,
+            "summary": trace_summary,
+            "started_at": active_traces[trace_id]["started_at"],
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            history = load_history()
+            history.insert(0, entry)
+            save_history(history[:100])
+        except Exception:
+            pass
+
         await manager.broadcast(channel, {
             "type": "complete",
             "hops": hops,
+            "summary": trace_summary,
         })
     except Exception as exc:
         if trace_id in active_traces:

@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 import json
 import os
 import re
@@ -230,9 +231,9 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
         # Hide console window on Windows when spawning subprocess in PyInstaller
         startupinfo = None
         if os.name == 'nt':
-            startupinfo = asyncio.subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= asyncio.subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = asyncio.subprocess.SW_HIDE
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -399,9 +400,9 @@ async def _run_trace_task(trace_id: str, cmd: list):
     try:
         startupinfo = None
         if os.name == 'nt':
-            startupinfo = asyncio.subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= asyncio.subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = asyncio.subprocess.SW_HIDE
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,

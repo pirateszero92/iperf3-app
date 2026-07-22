@@ -58,6 +58,7 @@ const CustomHopBadge = (props) => {
 export default function TraceRoute({ initialHost = '' }) {
   const [host, setHost] = useState(initialHost || '')
   const [maxHops, setMaxHops] = useState(30)
+  const [protocol, setProtocol] = useState('icmp') // icmp | udp | tcp
   const [status, setStatus] = useState('idle') // idle | running | complete | error
   const [hops, setHops] = useState([])
   const [logs, setLogs] = useState([])
@@ -92,7 +93,7 @@ export default function TraceRoute({ initialHost = '' }) {
       const res = await fetch('/api/trace/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: host.trim(), max_hops: Number(maxHops) }),
+        body: JSON.stringify({ host: host.trim(), max_hops: Number(maxHops), protocol }),
       })
 
       if (!res.ok) {
@@ -203,6 +204,28 @@ export default function TraceRoute({ initialHost = '' }) {
                 onChange={e => setMaxHops(Math.max(1, Math.min(64, Number(e.target.value))))}
                 disabled={status === 'running'}
               />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Trace Protocol</label>
+              <div className="tab-group" style={{ display: 'flex', gap: 6 }}>
+                {[
+                  { id: 'icmp', label: 'ICMP (Ping)' },
+                  { id: 'udp',  label: 'UDP' },
+                  { id: 'tcp',  label: 'TCP (SYN)' },
+                ].map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`btn ${protocol === p.id ? 'btn-primary' : 'btn-ghost'}`}
+                    style={{ flex: 1, padding: '6px 0', fontSize: 11 }}
+                    onClick={() => setProtocol(p.id)}
+                    disabled={status === 'running'}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="btn-group">

@@ -162,6 +162,7 @@ class ClientConfig(BaseModel):
 class TraceConfig(BaseModel):
     host: str
     max_hops: int = 30
+    protocol: str = "icmp"
 
 @app.get("/api/health")
 async def health():

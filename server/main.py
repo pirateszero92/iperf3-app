@@ -165,6 +165,7 @@ class ClientConfig(BaseModel):
 class TraceConfig(BaseModel):
     host: str
     max_hops: int = 30
+    protocol: str = "icmp" # "icmp" | "udp" | "tcp"
 
 # ---------------------------------------------------------------------------
 # Health
@@ -468,7 +469,11 @@ active_traces: dict[str, dict] = {}
 @app.post("/api/trace/run")
 async def run_trace(config: TraceConfig):
     trace_id = str(uuid.uuid4())
-    cmd = ["stdbuf", "-oL", "traceroute", "-I", "-n", "-m", str(config.max_hops), "-w", "2", config.host]
+    proto_flag = "-I" if config.protocol == "icmp" else ("-T" if config.protocol == "tcp" else "")
+    cmd = ["stdbuf", "-oL", "traceroute"]
+    if proto_flag:
+        cmd.append(proto_flag)
+    cmd += ["-n", "-m", str(config.max_hops), "-w", "2", config.host]
 
     active_traces[trace_id] = {
         "config": config.model_dump(),

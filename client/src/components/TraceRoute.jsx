@@ -58,6 +58,7 @@ const CustomHopBadge = (props) => {
 export default function TraceRoute({ initialHost = '' }) {
   const [host, setHost] = useState(initialHost || '')
   const [maxHops, setMaxHops] = useState(30)
+  const [probes, setProbes] = useState(3)
   const [protocol, setProtocol] = useState('icmp') // icmp | udp | tcp
   const [status, setStatus] = useState('idle') // idle | running | complete | error
   const [hops, setHops] = useState([])
@@ -93,7 +94,7 @@ export default function TraceRoute({ initialHost = '' }) {
       const res = await fetch('/api/trace/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: host.trim(), max_hops: Number(maxHops), protocol }),
+        body: JSON.stringify({ host: host.trim(), max_hops: Number(maxHops), probes: Number(probes), protocol }),
       })
 
       if (!res.ok) {
@@ -195,15 +196,27 @@ export default function TraceRoute({ initialHost = '' }) {
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Max Hops (TTL)</label>
-              <input
-                type="number"
-                className="form-input"
-                value={maxHops}
-                onChange={e => setMaxHops(Math.max(1, Math.min(64, Number(e.target.value))))}
-                disabled={status === 'running'}
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div className="form-group">
+                <label className="form-label">Max Hops (TTL)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={maxHops}
+                  onChange={e => setMaxHops(Math.max(1, Math.min(64, Number(e.target.value))))}
+                  disabled={status === 'running'}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Repeat / Probes</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={probes}
+                  onChange={e => setProbes(Math.max(1, Math.min(10, Number(e.target.value))))}
+                  disabled={status === 'running'}
+                />
+              </div>
             </div>
 
             <div className="form-group">
@@ -359,9 +372,7 @@ export default function TraceRoute({ initialHost = '' }) {
                     <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--text-muted)' }}>
                       <th style={{ padding: '8px 12px' }}>Hop #</th>
                       <th style={{ padding: '8px 12px' }}>IP Address</th>
-                      <th style={{ padding: '8px 12px' }}>RTT 1</th>
-                      <th style={{ padding: '8px 12px' }}>RTT 2</th>
-                      <th style={{ padding: '8px 12px' }}>RTT 3</th>
+                      <th style={{ padding: '8px 12px' }}>Probe Latency Values</th>
                       <th style={{ padding: '8px 12px' }}>Avg Latency</th>
                       <th style={{ padding: '8px 12px' }}>Status</th>
                     </tr>
@@ -377,15 +388,19 @@ export default function TraceRoute({ initialHost = '' }) {
                         ? 'var(--cyan)'
                         : 'var(--yellow)'
 
+                      const probeText = h.rtts && h.rtts.length > 0
+                        ? h.rtts.map(r => `${r} ms`).join(' | ')
+                        : [h.rtt1, h.rtt2, h.rtt3].filter(r => r !== null).map(r => `${r} ms`).join(' | ') || '*'
+
                       return (
                         <tr key={h.hop} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                           <td style={{ padding: '8px 12px', fontWeight: 600 }}>{h.hop}</td>
                           <td style={{ padding: '8px 12px', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: isTimeout ? 'var(--text-muted)' : '#10b981' }}>
                             {h.ip}
                           </td>
-                          <td style={{ padding: '8px 12px' }}>{h.rtt1 !== null ? `${h.rtt1} ms` : '*'}</td>
-                          <td style={{ padding: '8px 12px' }}>{h.rtt2 !== null ? `${h.rtt2} ms` : '*'}</td>
-                          <td style={{ padding: '8px 12px' }}>{h.rtt3 !== null ? `${h.rtt3} ms` : '*'}</td>
+                          <td style={{ padding: '8px 12px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--text-secondary)' }}>
+                            {probeText}
+                          </td>
                           <td style={{ padding: '8px 12px', fontWeight: 700, color: rttColor }}>
                             {h.avg_rtt !== null ? `${h.avg_rtt} ms` : 'Timed out'}
                           </td>

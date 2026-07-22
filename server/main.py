@@ -166,6 +166,7 @@ class TraceConfig(BaseModel):
     host: str
     max_hops: int = 30
     protocol: str = "icmp" # "icmp" | "udp" | "tcp"
+    probes: int = 3       # probes/repeat per hop
 
 # ---------------------------------------------------------------------------
 # Health
@@ -457,6 +458,7 @@ def parse_trace_line(line: str) -> Optional[dict]:
     return {
         "hop": hop_num,
         "ip": ip_str,
+        "rtts": rtts,
         "rtt1": rtts[0] if len(rtts) > 0 else None,
         "rtt2": rtts[1] if len(rtts) > 1 else None,
         "rtt3": rtts[2] if len(rtts) > 2 else None,
@@ -473,7 +475,7 @@ async def run_trace(config: TraceConfig):
     cmd = ["stdbuf", "-oL", "traceroute"]
     if proto_flag:
         cmd.append(proto_flag)
-    cmd += ["-n", "-m", str(config.max_hops), "-w", "2", config.host]
+    cmd += ["-q", str(config.probes), "-n", "-m", str(config.max_hops), "-w", "2", config.host]
 
     active_traces[trace_id] = {
         "config": config.model_dump(),

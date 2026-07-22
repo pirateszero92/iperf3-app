@@ -163,6 +163,7 @@ class TraceConfig(BaseModel):
     host: str
     max_hops: int = 30
     protocol: str = "icmp"
+    probes: int = 3
 
 @app.get("/api/health")
 async def health():
@@ -369,6 +370,7 @@ def parse_trace_line(line: str) -> Optional[dict]:
     return {
         "hop": hop_num,
         "ip": ip_str,
+        "rtts": rtts,
         "rtt1": rtts[0] if len(rtts) > 0 else None,
         "rtt2": rtts[1] if len(rtts) > 1 else None,
         "rtt3": rtts[2] if len(rtts) > 2 else None,

@@ -8,7 +8,7 @@ const DEFAULT = {
   bandwidth: '', buffer_length: '',
 }
 
-export default function ClientMode({ onComplete }) {
+export default function ClientMode({ onComplete, onRunTrace }) {
   const [cfg, setCfg]       = useState(DEFAULT)
   const [status, setStatus] = useState('idle')  // idle | running | complete | error
   const [liveData, setLiveData]   = useState([])
@@ -319,6 +319,15 @@ export default function ClientMode({ onComplete }) {
                 <button className="btn btn-primary btn-full" onClick={runTest}>
                   ▶ Run Test
                 </button>
+                {onRunTrace && (
+                  <button
+                    className="btn btn-ghost btn-full"
+                    onClick={() => onRunTrace(cfg.host)}
+                    disabled={!cfg.host.trim()}
+                  >
+                    📍 Trace Route
+                  </button>
+                )}
                 {status !== 'idle' && (
                   <button className="btn btn-ghost btn-full" onClick={reset}>
                     ↩ Reset

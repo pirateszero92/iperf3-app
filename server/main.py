@@ -162,6 +162,10 @@ class ClientConfig(BaseModel):
     bandwidth: str = ""     # UDP bandwidth, e.g. "100M"
     buffer_length: str = "" # Socket buffer length, e.g. "128K"
 
+class TraceConfig(BaseModel):
+    host: str
+    max_hops: int = 30
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -309,7 +313,7 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
 
         # We accumulate both individual-stream intervals and SUM intervals.
@@ -317,11 +321,13 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
         # sent to the frontend so it can sum them itself for parallel tests.
         individual_intervals: list[dict] = []
         sum_intervals: list[dict] = []
+        last_log = "iperf3 exited with an error"
 
         async for raw in proc.stdout:
             text = raw.decode(errors="replace").strip()
             if not text:
                 continue
+            last_log = text
 
             await manager.broadcast(channel, {
                 "type": "log",
@@ -345,7 +351,6 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
                         },
                     })
 
-        stderr_bytes = await proc.stderr.read()
         await proc.wait()
 
         if proc.returncode == 0:
@@ -383,9 +388,8 @@ async def _run_client_test(test_id: str, cmd: list, config: ClientConfig):
             })
 
         else:
-            err_msg = stderr_bytes.decode(errors="replace").strip() or "iperf3 exited with an error"
             active_tests[test_id]["status"] = "error"
-            await manager.broadcast(channel, {"type": "error", "message": err_msg})
+            await manager.broadcast(channel, {"type": "error", "message": last_log})
 
     except Exception as exc:
         active_tests[test_id]["status"] = "error"
@@ -425,3 +429,104 @@ async def delete_history_entry(test_id: str):
     history = [h for h in load_history() if h["id"] != test_id]
     save_history(history)
     return {"status": "deleted"}
+
+# ---------------------------------------------------------------------------
+# Route Trace (Traceroute)
+# ---------------------------------------------------------------------------
+
+_TRACE_LINE_RE = re.compile(r"^\s*(\d+)\s+(.+)$")
+_IP_RE = re.compile(r"(?:\d{1,3}\.){3}\d{1,3}")
+_RTT_RE = re.compile(r"([\d.]+)\s*ms")
+
+def parse_trace_line(line: str) -> Optional[dict]:
+    line = line.strip()
+    m = _TRACE_LINE_RE.match(line)
+    if not m:
+        return None
+    hop_num = int(m.group(1))
+    rest = m.group(2)
+
+    rest_clean = rest.replace("<1 ms", "0.5 ms").replace("<1ms", "0.5 ms")
+    ip_match = _IP_RE.search(rest_clean)
+    ip_str = ip_match.group(0) if ip_match else "*"
+
+    rtts = [float(r) for r in _RTT_RE.findall(rest_clean)]
+    avg_rtt = round(sum(rtts) / len(rtts), 2) if rtts else None
+
+    return {
+        "hop": hop_num,
+        "ip": ip_str,
+        "rtt1": rtts[0] if len(rtts) > 0 else None,
+        "rtt2": rtts[1] if len(rtts) > 1 else None,
+        "rtt3": rtts[2] if len(rtts) > 2 else None,
+        "avg_rtt": avg_rtt,
+        "status": "success" if rtts else "timeout",
+    }
+
+active_traces: dict[str, dict] = {}
+
+@app.post("/api/trace/run")
+async def run_trace(config: TraceConfig):
+    trace_id = str(uuid.uuid4())
+    cmd = ["traceroute", "-n", "-m", str(config.max_hops), "-w", "2", config.host]
+
+    active_traces[trace_id] = {
+        "config": config.model_dump(),
+        "command": " ".join(cmd),
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    asyncio.create_task(_run_trace_task(trace_id, cmd))
+    return {"trace_id": trace_id, "command": " ".join(cmd)}
+
+async def _run_trace_task(trace_id: str, cmd: list):
+    channel = f"trace_{trace_id}"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        hops = []
+        async for raw in proc.stdout:
+            text = raw.decode(errors="replace").strip()
+            if not text:
+                continue
+            await manager.broadcast(channel, {
+                "type": "log",
+                "message": text,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            parsed = parse_trace_line(text)
+            if parsed:
+                hops.append(parsed)
+                await manager.broadcast(channel, {
+                    "type": "hop",
+                    "data": parsed,
+                })
+        await proc.wait()
+        if trace_id in active_traces:
+            active_traces[trace_id]["status"] = "complete"
+        await manager.broadcast(channel, {
+            "type": "complete",
+            "hops": hops,
+        })
+    except Exception as exc:
+        if trace_id in active_traces:
+            active_traces[trace_id]["status"] = "error"
+        await manager.broadcast(channel, {"type": "error", "message": str(exc)})
+
+@app.websocket("/ws/trace/{trace_id}")
+async def trace_ws(websocket: WebSocket, trace_id: str):
+    await manager.connect(f"trace_{trace_id}", websocket)
+    if trace_id in active_traces:
+        await websocket.send_json({
+            "type": "status",
+            "status": active_traces[trace_id]["status"],
+            "command": active_traces[trace_id].get("command", ""),
+        })
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(f"trace_{trace_id}", websocket)

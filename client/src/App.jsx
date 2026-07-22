@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import ServerMode from './components/ServerMode'
 import ClientMode from './components/ClientMode'
 import TestHistory from './components/TestHistory'
+import TraceRoute from './components/TraceRoute'
 
 const TABS = [
   { id: 'client',  label: 'Client Mode',  icon: '⚡' },
+  { id: 'trace',   label: 'Route Trace',  icon: '📍' },
   { id: 'server',  label: 'Server Mode',  icon: '🖥️', hasDot: true },
   { id: 'history', label: 'Test History', icon: '📊' },
 ]
@@ -13,6 +15,7 @@ export default function App() {
   const [activeTab, setActiveTab]     = useState('client')
   const [serverStatus, setServerStatus] = useState('stopped')
   const [historyKey, setHistoryKey]   = useState(0)
+  const [traceHost, setTraceHost]     = useState('')
 
   // Poll server status so sidebar dot stays in sync even when not on the server tab
   useEffect(() => {
@@ -25,6 +28,11 @@ export default function App() {
     const id = setInterval(check, 4000)
     return () => clearInterval(id)
   }, [])
+
+  const handleStartTraceFromClient = (host) => {
+    setTraceHost(host)
+    setActiveTab('trace')
+  }
 
   return (
     <div className="app-layout">
@@ -65,7 +73,13 @@ export default function App() {
       <main className="main-content">
         <div className="content-inner">
           {activeTab === 'client' && (
-            <ClientMode onComplete={() => setHistoryKey(k => k + 1)} />
+            <ClientMode
+              onComplete={() => setHistoryKey(k => k + 1)}
+              onRunTrace={handleStartTraceFromClient}
+            />
+          )}
+          {activeTab === 'trace' && (
+            <TraceRoute initialHost={traceHost} />
           )}
           {activeTab === 'server' && (
             <ServerMode onStatusChange={setServerStatus} />

@@ -1074,7 +1074,9 @@ async def scan_subnet_endpoint(subnet_id: str):
             addr["is_online"] = False
             addr["status"] = "Available"
             prev_resp = str(addr.get("last_response", ""))
-            if "ms" in prev_resp or prev_resp in ["Today", "< 1 ms"]:
+            if prev_resp.startswith("Prev ("):
+                pass
+            elif "ms" in prev_resp or prev_resp in ["Today", "< 1 ms"]:
                 addr["last_response"] = f"Prev ({prev_resp})"
             elif not addr.get("last_response"):
                 addr["last_response"] = "Never"

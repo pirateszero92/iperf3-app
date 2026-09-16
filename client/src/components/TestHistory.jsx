@@ -5,6 +5,13 @@ export default function TestHistory() {
   const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState(null)
+  const [copiedId, setCopiedId] = useState(null)
+
+  const copyText = (text, id) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 1800)
+  }
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -267,15 +274,123 @@ export default function TestHistory() {
                       )}
                     </div>
 
-                    {isNmap && entry.command && (
-                      <div style={{ marginTop: 10 }}>
-                        <code style={{ background: '#0f172a', padding: '6px 10px', borderRadius: 6, display: 'block', fontSize: 12, color: 'var(--accent)' }}>
-                          {entry.command}
-                        </code>
+                    {/* ── Nmap Scan Results ── */}
+                    {isNmap && (
+                      <div className="nmap-history-results" style={{ marginTop: 14 }}>
+                        {/* Host Details Grid */}
+                        {entry.host_details && (entry.host_details.state || entry.host_details.os || entry.host_details.mac) && (
+                          <div className="host-details-grid" style={{ marginBottom: 14 }}>
+                            <div className="detail-card">
+                              <div className="detail-label">Host Status</div>
+                              <div className="detail-value" style={{ color: entry.host_details.state === 'Up' ? 'var(--green)' : 'var(--text-primary)' }}>
+                                {entry.host_details.state || 'Unknown'}
+                              </div>
+                            </div>
+                            <div className="detail-card">
+                              <div className="detail-label">Latency</div>
+                              <div className="detail-value">{entry.host_details.latency || '-'}</div>
+                            </div>
+                            {entry.host_details.mac && (
+                              <div className="detail-card">
+                                <div className="detail-label">MAC Address</div>
+                                <div className="detail-value" style={{ fontFamily: 'monospace' }}>
+                                  {entry.host_details.mac}
+                                </div>
+                              </div>
+                            )}
+                            {entry.host_details.vendor && (
+                              <div className="detail-card">
+                                <div className="detail-label">Hardware Vendor</div>
+                                <div className="detail-value">{entry.host_details.vendor}</div>
+                              </div>
+                            )}
+                            {entry.host_details.os && (
+                              <div className="detail-card full-width">
+                                <div className="detail-label">OS Detection / Fingerprint</div>
+                                <div className="detail-value">{entry.host_details.os}</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Ports Table */}
+                        <div style={{ marginBottom: 14 }}>
+                          <div className="form-label" style={{ marginBottom: 6 }}>
+                            Discovered Ports & Services ({entry.ports?.length || entry.open_ports || 0})
+                          </div>
+                          {entry.ports && entry.ports.length > 0 ? (
+                            <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                <thead>
+                                  <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                                    <th style={{ padding: '8px 12px', width: 90 }}>Port</th>
+                                    <th style={{ padding: '8px 12px', width: 80 }}>Protocol</th>
+                                    <th style={{ padding: '8px 12px', width: 90 }}>State</th>
+                                    <th style={{ padding: '8px 12px', width: 120 }}>Service</th>
+                                    <th style={{ padding: '8px 12px' }}>Version / Information</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {entry.ports.map((p, idx) => {
+                                    const [pNum, proto] = (p.port || '').split('/')
+                                    return (
+                                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                        <td style={{ padding: '7px 12px', fontWeight: 600, color: 'var(--cyan)', fontFamily: 'monospace' }}>
+                                          {pNum || p.port}
+                                        </td>
+                                        <td style={{ padding: '7px 12px' }}>
+                                          <span className="proto-pill">{proto || 'tcp'}</span>
+                                        </td>
+                                        <td style={{ padding: '7px 12px' }}>
+                                          <span className={`state-badge ${p.state}`}>
+                                            {p.state}
+                                          </span>
+                                        </td>
+                                        <td style={{ padding: '7px 12px', fontWeight: 500 }}>
+                                          {p.service || '-'}
+                                        </td>
+                                        <td style={{ padding: '7px 12px', color: 'var(--text-secondary)' }}>
+                                          {p.version || '-'}
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div style={{ padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, color: 'var(--text-muted)', fontSize: 12 }}>
+                              {entry.open_ports > 0
+                                ? `⚠️ Found ${entry.open_ports} open port(s). (Detailed port list was not recorded for this legacy test entry. Future scans will record full details).`
+                                : 'No open ports detected in this scan.'}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Terminal Output Log */}
+                        {entry.output && (
+                          <div style={{ marginBottom: 14 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <div className="form-label" style={{ marginBottom: 0 }}>Terminal Console Output</div>
+                              <button
+                                className="btn-tiny"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  copyText(entry.output, `out-${entry.id}`)
+                                }}
+                              >
+                                {copiedId === `out-${entry.id}` ? '✓ Copied' : '📋 Copy Output'}
+                              </button>
+                            </div>
+                            <pre className="raw-output-box" style={{ maxHeight: 280, margin: 0 }}>
+                              {entry.output}
+                            </pre>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* Content / Chart / Table */}
+                    {/* Content / Chart / Table for Trace & iPerf */}
                     {isTrace ? (
                       entry.hops?.length > 0 && (
                         <div style={{ overflowX: 'auto', marginTop: 12 }}>
@@ -305,11 +420,11 @@ export default function TestHistory() {
                           </table>
                         </div>
                       )
-                    ) : (
+                    ) : !isNmap ? (
                       entry.intervals?.length > 0 && (
                         <LiveChart data={entry.intervals} isRunning={false} />
                       )
-                    )}
+                    ) : null}
 
                     {/* Command */}
                     {entry.command && (

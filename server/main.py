@@ -855,6 +855,9 @@ async def _run_nmap_task(scan_id: str, cmd_args: list[str], raw_cmd: str, target
                 "command": raw_cmd,
                 "ports_count": len(ports),
                 "open_ports": host_details["open_ports"],
+                "ports": ports,
+                "host_details": host_details,
+                "output": "\n".join(lines[-2000:]),
                 "status": "complete",
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             }

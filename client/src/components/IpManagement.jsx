@@ -173,8 +173,8 @@ export default function IpManagement() {
         <div className="ipam-left-panel">
           <div className="ipam-left-header">
             <span className="ipam-title">Subnets</span>
-            <button className="btn btn-tiny btn-primary" onClick={() => setShowAddModal(true)}>
-              + Add
+            <button className="btn btn-tiny btn-success" onClick={() => setShowAddModal(true)}>
+              + Add Subnet
             </button>
           </div>
 
@@ -231,7 +231,7 @@ export default function IpManagement() {
 
                   <div className="ipam-controls-row">
                     <select
-                      className="select-field select-filter"
+                      className="form-select select-filter"
                       value={filterMode}
                       onChange={(e) => setFilterMode(e.target.value)}
                     >
@@ -242,14 +242,14 @@ export default function IpManagement() {
 
                     <input
                       type="text"
-                      className="input-field input-ip-search"
+                      className="form-input input-ip-search"
                       placeholder="Search IP / Hostname..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
 
                     <button
-                      className="btn btn-primary btn-scan"
+                      className="btn btn-success btn-scan"
                       onClick={handleScanSubnet}
                       disabled={scanning}
                     >
@@ -257,7 +257,7 @@ export default function IpManagement() {
                     </button>
 
                     <button
-                      className="btn btn-secondary btn-refresh"
+                      className="btn btn-ghost btn-refresh"
                       onClick={fetchSubnets}
                       disabled={scanning}
                     >
@@ -417,41 +417,41 @@ export default function IpManagement() {
       {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal-content card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
-            <h3>Add New Subnet</h3>
-            <p className="page-desc">Enter a network CIDR to manage and monitor.</p>
+            <h3 className="card-title" style={{ fontSize: 16, marginBottom: 8 }}>➕ Add New Subnet</h3>
+            <p className="page-desc" style={{ marginBottom: 16, fontSize: 12 }}>Enter a network CIDR to manage and monitor.</p>
 
             <form onSubmit={handleAddSubnet}>
               {addError && <div className="alert-error" style={{ marginBottom: 12 }}>{addError}</div>}
 
-              <div className="form-group" style={{ marginBottom: 12 }}>
-                <label className="field-label">CIDR Notation (e.g. 10.1.1.0/24 or 192.168.1.0/24):</label>
+              <div className="form-group" style={{ marginBottom: 14 }}>
+                <label className="form-label">CIDR Notation (e.g. 10.1.1.0/24 or 192.168.1.0/24)</label>
                 <input
                   type="text"
-                  className="input-field"
+                  className="form-input"
                   value={newCidr}
                   onChange={(e) => setNewCidr(e.target.value)}
                   placeholder="192.168.1.0/24"
                   required
                 />
-                <span className="field-hint">Supports up to /22 (1,024 addresses)</span>
+                <span className="field-hint" style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>Supports up to /22 (1,024 addresses)</span>
               </div>
 
-              <div className="form-group" style={{ marginBottom: 16 }}>
-                <label className="field-label">Subnet Label / Friendly Name (Optional):</label>
+              <div className="form-group" style={{ marginBottom: 20 }}>
+                <label className="form-label">Subnet Label / Friendly Name (Optional)</label>
                 <input
                   type="text"
-                  className="input-field"
+                  className="form-input"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g. Office LAN or Lab Network"
                 />
               </div>
 
-              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowAddModal(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-success">
                   Create Subnet
                 </button>
               </div>

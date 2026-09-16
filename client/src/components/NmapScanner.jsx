@@ -148,34 +148,38 @@ export default function NmapScanner() {
   return (
     <div className="tab-page">
       {/* ── Page Header ── */}
-      <div className="page-header" style={{ marginBottom: 16 }}>
+      <div className="page-header">
         <div>
-          <h2>Nmap Network Scanner</h2>
-          <p className="page-desc">Comprehensive port scanning, service version discovery, and host OS detection (Zenmap Interface)</p>
+          <h1 className="page-title">Nmap Network Scanner</h1>
+          <p className="page-subtitle">Comprehensive port scanning, service version discovery, and host OS detection (Zenmap Interface)</p>
+        </div>
+        <div className={`status-badge ${scanStatus}`}>
+          <span className="status-dot" />
+          {scanStatus === 'running' ? 'Scanning…' : scanStatus === 'complete' ? 'Complete' : scanStatus === 'stopped' ? 'Stopped' : 'Ready'}
         </div>
       </div>
 
-      {/* ── Zenmap Control Bar ── */}
-      <div className="nmap-control-panel card">
-        <div className="nmap-row-inputs">
-          <div className="nmap-field-target">
-            <label className="field-label">Target:</label>
-            <div className="input-with-pill">
-              <input
-                type="text"
-                className="input-field"
-                placeholder="e.g. 192.168.1.1 or example.com"
-                value={target}
-                onChange={(e) => handleTargetChange(e.target.value)}
-                disabled={scanning}
-              />
-            </div>
+      {/* ── Configuration Card ── */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h2 className="card-title">⚙️ Scanner Configuration</h2>
+
+        <div className="form-grid-3">
+          <div className="form-group">
+            <label className="form-label">Target (Host / IP / CIDR)</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="e.g. 192.168.1.1 or example.com"
+              value={target}
+              onChange={(e) => handleTargetChange(e.target.value)}
+              disabled={scanning}
+            />
           </div>
 
-          <div className="nmap-field-profile">
-            <label className="field-label">Profile:</label>
+          <div className="form-group">
+            <label className="form-label">Scan Profile</label>
             <select
-              className="select-field"
+              className="form-select"
               value={selectedProfile}
               onChange={(e) => handleProfileChange(e.target.value)}
               disabled={scanning}
@@ -186,69 +190,61 @@ export default function NmapScanner() {
             </select>
           </div>
 
-          <div className="nmap-actions">
+          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+            <label className="form-label" style={{ opacity: 0 }}>Action</label>
             {!scanning ? (
-              <button className="btn btn-primary" onClick={startScan} disabled={!target.trim()}>
-                ▶ Scan
+              <button className="btn btn-success" onClick={startScan} disabled={!target.trim()}>
+                ▶ Start Scan
               </button>
             ) : (
-              <button className="btn btn-danger" onClick={stopScan} style={{ color: '#fff', background: '#dc2626' }}>
-                ■ Cancel
+              <button className="btn btn-danger" onClick={stopScan}>
+                ■ Stop Scan
               </button>
             )}
           </div>
         </div>
 
         {/* Command Line Field */}
-        <div className="nmap-command-bar">
-          <label className="field-label">Command:</label>
-          <div className="cmd-input-wrap">
-            <input
-              type="text"
-              className="input-field cmd-input"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              disabled={scanning}
-              spellCheck={false}
-            />
-          </div>
+        <div className="form-group" style={{ marginTop: 8, marginBottom: 0 }}>
+          <label className="form-label">Command Line (Editable)</label>
+          <input
+            type="text"
+            className="form-input"
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            disabled={scanning}
+            spellCheck={false}
+            style={{ fontFamily: 'monospace', color: 'var(--cyan)' }}
+          />
         </div>
       </div>
 
-      {/* ── Output Navigation & Content ── */}
-      <div className="card nmap-results-card">
-        <div className="nmap-subtabs-bar">
-          <div className="nmap-subtabs">
-            <button
-              className={`subtab-btn ${activeTab === 'output' ? 'active' : ''}`}
-              onClick={() => setActiveTab('output')}
-            >
-              💻 Nmap Output
-              {outputLines.length > 0 && <span className="tab-counter">{outputLines.length}</span>}
-            </button>
-            <button
-              className={`subtab-btn ${activeTab === 'ports' ? 'active' : ''}`}
-              onClick={() => setActiveTab('ports')}
-            >
-              🔌 Ports / Hosts
-              {ports.length > 0 && <span className="tab-counter count-active">{ports.length}</span>}
-            </button>
-            <button
-              className={`subtab-btn ${activeTab === 'details' ? 'active' : ''}`}
-              onClick={() => setActiveTab('details')}
-            >
-              📋 Host Details
-            </button>
-          </div>
+      {/* ── Modern Sub Navigation ── */}
+      <div className="subtabs-nav">
+        <button
+          className={`subtab-pill ${activeTab === 'output' ? 'active' : ''}`}
+          onClick={() => setActiveTab('output')}
+        >
+          💻 Nmap Output
+          {outputLines.length > 0 && <span className="tab-counter">{outputLines.length}</span>}
+        </button>
+        <button
+          className={`subtab-pill ${activeTab === 'ports' ? 'active' : ''}`}
+          onClick={() => setActiveTab('ports')}
+        >
+          🔌 Ports / Hosts
+          {ports.length > 0 && <span className="tab-counter count-active">{ports.length}</span>}
+        </button>
+        <button
+          className={`subtab-pill ${activeTab === 'details' ? 'active' : ''}`}
+          onClick={() => setActiveTab('details')}
+        >
+          📋 Host Details
+        </button>
+      </div>
 
-          <div className="nmap-status-pill">
-            {scanStatus === 'running' && <span className="status-badge badge-running">● Scanning...</span>}
-            {scanStatus === 'complete' && <span className="status-badge badge-done">✓ Finished</span>}
-            {scanStatus === 'stopped' && <span className="status-badge badge-stopped">■ Stopped</span>}
-            {scanStatus === 'error' && <span className="status-badge badge-error">✕ Error</span>}
-            {scanStatus === 'idle' && <span className="status-badge badge-idle">Idle</span>}
-          </div>
-        </div>
+      {/* ── Output Content ── */}
+      <div className="card nmap-results-card">
 
         {/* Tab 1: Terminal Output */}
         {activeTab === 'output' && (

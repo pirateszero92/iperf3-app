@@ -115,30 +115,30 @@ export default function DnsWhois() {
 
   return (
     <div className="tab-page">
-      {/* ── Header ── */}
-      <div className="page-header" style={{ marginBottom: 16 }}>
+      {/* ── Page Header ── */}
+      <div className="page-header">
         <div>
-          <h2>DNS & WHOIS Intelligence Suite</h2>
-          <p className="page-desc">Comprehensive DNS record lookup, reverse IP resolve, and WHOIS domain/IP registration analysis</p>
+          <h1 className="page-title">DNS & WHOIS Intelligence Suite</h1>
+          <p className="page-subtitle">Comprehensive DNS record lookup, reverse IP resolve, and WHOIS domain/IP registration analysis</p>
         </div>
       </div>
 
-      {/* ── Sub Navigation ── */}
-      <div className="tab-buttons-container" style={{ marginBottom: 16 }}>
+      {/* ── Modern Sub Navigation ── */}
+      <div className="subtabs-nav">
         <button
-          className={`tab-btn ${activeSubTab === 'dns' ? 'active' : ''}`}
+          className={`subtab-pill ${activeSubTab === 'dns' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('dns')}
         >
           🔍 DNS Lookup & Analyzer
         </button>
         <button
-          className={`tab-btn ${activeSubTab === 'resolve' ? 'active' : ''}`}
+          className={`subtab-pill ${activeSubTab === 'resolve' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('resolve')}
         >
           🔄 Reverse DNS (Resolve)
         </button>
         <button
-          className={`tab-btn ${activeSubTab === 'whois' ? 'active' : ''}`}
+          className={`subtab-pill ${activeSubTab === 'whois' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('whois')}
         >
           📋 WHOIS Lookup
@@ -148,13 +148,15 @@ export default function DnsWhois() {
       {/* ── Section 1: DNS Lookup ── */}
       {activeSubTab === 'dns' && (
         <div className="dns-lookup-panel">
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="form-row-multi">
-              <div style={{ flex: 2 }}>
-                <label className="field-label">Domain Name / Hostname:</label>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h2 className="card-title">🔍 Query Configuration</h2>
+            
+            <div className="form-grid-3">
+              <div className="form-group">
+                <label className="form-label">Domain Name / Hostname</label>
                 <input
                   type="text"
-                  className="input-field"
+                  className="form-input"
                   placeholder="e.g. google.com or cloudflare.com"
                   value={dnsTarget}
                   onChange={(e) => setDnsTarget(e.target.value)}
@@ -162,10 +164,10 @@ export default function DnsWhois() {
                 />
               </div>
 
-              <div style={{ flex: 1 }}>
-                <label className="field-label">Record Type:</label>
+              <div className="form-group">
+                <label className="form-label">Record Type</label>
                 <select
-                  className="select-field"
+                  className="form-select"
                   value={recordType}
                   onChange={(e) => setRecordType(e.target.value)}
                 >
@@ -175,10 +177,10 @@ export default function DnsWhois() {
                 </select>
               </div>
 
-              <div style={{ flex: 1.5 }}>
-                <label className="field-label">Nameserver Server:</label>
+              <div className="form-group">
+                <label className="form-label">Nameserver (Resolver)</label>
                 <select
-                  className="select-field"
+                  className="form-select"
                   value={nameserver}
                   onChange={(e) => setNameserver(e.target.value)}
                 >
@@ -187,17 +189,17 @@ export default function DnsWhois() {
                   ))}
                 </select>
               </div>
+            </div>
 
-              <div style={{ alignSelf: 'flex-end' }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleDnsLookup}
-                  disabled={dnsLoading || !dnsTarget.trim()}
-                  style={{ minWidth: 120 }}
-                >
-                  {dnsLoading ? '⏳ Querying...' : '▶ Query DNS'}
-                </button>
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <button
+                className="btn btn-success"
+                onClick={handleDnsLookup}
+                disabled={dnsLoading || !dnsTarget.trim()}
+                style={{ minWidth: 160 }}
+              >
+                {dnsLoading ? '⏳ Querying…' : '▶ Query DNS'}
+              </button>
             </div>
           </div>
 
@@ -212,7 +214,7 @@ export default function DnsWhois() {
                   <span className="pill-badge">{dnsResult.records.length} Records Found</span>
                 </div>
                 <button
-                  className="btn-tiny"
+                  className="btn btn-ghost btn-text"
                   onClick={() => setDnsRawOpen(!dnsRawOpen)}
                 >
                   {dnsRawOpen ? 'Hide Raw Output' : 'View Raw Dig Output'}
@@ -223,7 +225,7 @@ export default function DnsWhois() {
                 <pre className="raw-output-box">{dnsResult.raw_output}</pre>
               )}
 
-              <div className="table-responsive" style={{ marginTop: 12 }}>
+              <div className="table-responsive" style={{ marginTop: 16 }}>
                 {dnsResult.records.length === 0 ? (
                   <div className="empty-state">No DNS records returned for the specified query.</div>
                 ) : (
@@ -259,31 +261,35 @@ export default function DnsWhois() {
       {/* ── Section 2: Reverse DNS (Resolve) ── */}
       {activeSubTab === 'resolve' && (
         <div className="dns-resolve-panel">
-          <div className="card" style={{ marginBottom: 16 }}>
-            <label className="field-label">IP Addresses to Resolve (one per line, up to 50):</label>
-            <textarea
-              className="textarea-field"
-              rows={4}
-              value={resolveInput}
-              onChange={(e) => setResolveInput(e.target.value)}
-              placeholder="e.g.&#10;8.8.8.8&#10;1.1.1.1&#10;192.168.1.1"
-              style={{ fontFamily: 'monospace' }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h2 className="card-title">🔄 Reverse DNS (PTR) Resolution</h2>
+            <div className="form-group">
+              <label className="form-label">IP Addresses to Resolve (One per line, up to 50)</label>
+              <textarea
+                className="form-input"
+                rows={5}
+                value={resolveInput}
+                onChange={(e) => setResolveInput(e.target.value)}
+                placeholder="e.g.&#10;8.8.8.8&#10;1.1.1.1&#10;192.168.1.1"
+                style={{ fontFamily: 'monospace', resize: 'vertical' }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
               <button
-                className="btn btn-primary"
+                className="btn btn-success"
                 onClick={handleResolve}
                 disabled={resolveLoading}
+                style={{ minWidth: 180 }}
               >
-                {resolveLoading ? '⏳ Resolving...' : '🔄 Resolve PTR Records'}
+                {resolveLoading ? '⏳ Resolving…' : '▶ Resolve PTR Records'}
               </button>
             </div>
           </div>
 
           {resolveResults.length > 0 && (
             <div className="card">
-              <h3>Resolution Results</h3>
-              <div className="table-responsive" style={{ marginTop: 10 }}>
+              <h2 className="card-title">Resolution Results</h2>
+              <div className="table-responsive" style={{ marginTop: 12 }}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -297,7 +303,7 @@ export default function DnsWhois() {
                     {resolveResults.map((item, idx) => (
                       <tr key={idx}>
                         <td><code>{item.ip}</code></td>
-                        <td style={{ fontWeight: item.status === 'resolved' ? 600 : 400, color: item.status === 'resolved' ? 'var(--accent)' : 'inherit' }}>
+                        <td style={{ fontWeight: item.status === 'resolved' ? 600 : 400, color: item.status === 'resolved' ? 'var(--cyan)' : 'inherit' }}>
                           {item.hostname}
                         </td>
                         <td>
@@ -319,34 +325,38 @@ export default function DnsWhois() {
       {/* ── Section 3: WHOIS Lookup ── */}
       {activeSubTab === 'whois' && (
         <div className="whois-panel">
-          <div className="card" style={{ marginBottom: 16 }}>
-            <label className="field-label">Domain Name or IP Address:</label>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="e.g. google.com or 8.8.8.8"
-                value={whoisTarget}
-                onChange={(e) => setWhoisTarget(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleWhois()}
-              />
-              <button
-                className="btn btn-primary"
-                onClick={handleWhois}
-                disabled={whoisLoading || !whoisTarget.trim()}
-                style={{ minWidth: 140 }}
-              >
-                {whoisLoading ? '⏳ Looking up...' : '📋 Query WHOIS'}
-              </button>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <h2 className="card-title">📋 Domain & IP WHOIS Lookup</h2>
+            <div className="form-group">
+              <label className="form-label">Domain Name or IP Address</label>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. google.com or 8.8.8.8"
+                  value={whoisTarget}
+                  onChange={(e) => setWhoisTarget(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleWhois()}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="btn btn-success"
+                  onClick={handleWhois}
+                  disabled={whoisLoading || !whoisTarget.trim()}
+                  style={{ minWidth: 160 }}
+                >
+                  {whoisLoading ? '⏳ Looking up…' : '▶ Query WHOIS'}
+                </button>
+              </div>
             </div>
           </div>
 
           {whoisResult && (
             <div className="card">
-              <h3>WHOIS Record: {whoisResult.target}</h3>
+              <h2 className="card-title">WHOIS Record: {whoisResult.target}</h2>
 
               {/* Parsed Overview Grid */}
-              <div className="host-details-grid" style={{ marginTop: 12, marginBottom: 16 }}>
+              <div className="host-details-grid" style={{ marginTop: 14, marginBottom: 16 }}>
                 <div className="detail-card">
                   <div className="detail-label">Registrar</div>
                   <div className="detail-value">{whoisResult.parsed?.registrar || '-'}</div>
@@ -361,7 +371,7 @@ export default function DnsWhois() {
                 </div>
                 <div className="detail-card">
                   <div className="detail-label">Expiry Date</div>
-                  <div className="detail-value" style={{ color: 'var(--accent)' }}>{whoisResult.parsed?.expiry_date || '-'}</div>
+                  <div className="detail-value" style={{ color: 'var(--cyan)' }}>{whoisResult.parsed?.expiry_date || '-'}</div>
                 </div>
                 <div className="detail-card">
                   <div className="detail-label">Domain Status</div>
@@ -381,9 +391,9 @@ export default function DnsWhois() {
 
               {/* Raw WHOIS Output */}
               <div className="raw-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <strong>Full WHOIS Raw Output:</strong>
+                <span className="form-label" style={{ marginBottom: 0 }}>Full WHOIS Raw Output</span>
                 <button
-                  className="btn-tiny"
+                  className="btn btn-ghost btn-text"
                   onClick={() => navigator.clipboard.writeText(whoisResult.raw_output)}
                 >
                   📋 Copy Text

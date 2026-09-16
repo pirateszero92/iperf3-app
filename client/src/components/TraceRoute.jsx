@@ -64,13 +64,33 @@ export default function TraceRoute({ initialHost = '' }) {
   const [hops, setHops] = useState([])
   const [logs, setLogs] = useState([])
   const [command, setCommand] = useState('')
+
+  // ── Loop Mode State ──
+  const [loopEnabled, setLoopEnabled] = useState(false)
+  const [loopCount, setLoopCount] = useState(0) // 0 = Infinite / Continuous, or 3, 5, 10
+  const [loopInterval, setLoopInterval] = useState(2) // seconds delay between cycles
+  const [currentCycle, setCurrentCycle] = useState(1)
+  const [countdown, setCountdown] = useState(0)
+  const [isWaitingNextCycle, setIsWaitingNextCycle] = useState(false)
+  const [cycleStats, setCycleStats] = useState({}) // { [hop]: { count, successCount, min, max, sum, avg } }
+
   const wsRef = useRef(null)
+  const isStoppingRef = useRef(false)
+  const timerRef = useRef(null)
 
   useEffect(() => {
     if (initialHost && !host) {
       setHost(initialHost)
     }
   }, [initialHost])
+
+  useEffect(() => {
+    return () => {
+      isStoppingRef.current = true
+      if (timerRef.current) clearTimeout(timerRef.current)
+      if (wsRef.current) wsRef.current.close()
+    }
+  }, [])
 
   const addLog = (text, type = '') => {
     setLogs(prev => [
@@ -79,90 +99,170 @@ export default function TraceRoute({ initialHost = '' }) {
     ])
   }
 
+  const updateCumulativeStats = (latestHops) => {
+    setCycleStats(prev => {
+      const next = { ...prev }
+      latestHops.forEach(h => {
+        const existing = next[h.hop] || {
+          count: 0,
+          successCount: 0,
+          min: null,
+          max: null,
+          sum: 0,
+          avg: null,
+          ip: h.ip,
+        }
+        existing.count += 1
+        existing.ip = h.ip !== '*' ? h.ip : existing.ip
+
+        if (h.avg_rtt !== null && h.status === 'success') {
+          existing.successCount += 1
+          existing.min = existing.min === null ? h.avg_rtt : Math.min(existing.min, h.avg_rtt)
+          existing.max = existing.max === null ? h.avg_rtt : Math.max(existing.max, h.avg_rtt)
+          existing.sum += h.avg_rtt
+          existing.avg = Number((existing.sum / existing.successCount).toFixed(2))
+        }
+        next[h.hop] = existing
+      })
+      return next
+    })
+  }
+
+  const runOneTraceCycle = (cycleNum) => {
+    return new Promise((resolve, reject) => {
+      fetch('/api/trace/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host: host.trim(), max_hops: Number(maxHops), probes: Number(probes), protocol }),
+      })
+      .then(async res => {
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.detail || 'Failed to start trace')
+        }
+        return res.json()
+      })
+      .then(data => {
+        setCommand(data.command || `traceroute -n -m ${maxHops} ${host}`)
+        addLog(`[Cycle ${cycleNum}] Starting route trace to ${host.trim()}...`, 'info')
+
+        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+        const wsUrl = `${proto}://${window.location.host}/ws/trace/${data.trace_id}`
+        const ws = new WebSocket(wsUrl)
+        wsRef.current = ws
+
+        let currentCycleHops = []
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data)
+            if (msg.type === 'log') {
+              addLog(msg.message)
+            } else if (msg.type === 'hop') {
+              setHops(prev => {
+                const existingIndex = prev.findIndex(h => h.hop === msg.data.hop)
+                if (existingIndex >= 0) {
+                  const next = [...prev]
+                  next[existingIndex] = msg.data
+                  currentCycleHops = next
+                  return next
+                }
+                const next = [...prev, msg.data].sort((a, b) => a.hop - b.hop)
+                currentCycleHops = next
+                return next
+              })
+            } else if (msg.type === 'complete') {
+              addLog(`[Cycle ${cycleNum}] Route trace completed.`, 'info')
+              ws.close()
+              resolve(currentCycleHops)
+            } else if (msg.type === 'error') {
+              addLog(`[Cycle ${cycleNum}] Error: ${msg.message}`, 'error')
+              ws.close()
+              reject(new Error(msg.message))
+            }
+          } catch (e) {
+            console.error(e)
+          }
+        }
+
+        ws.onerror = () => {
+          addLog(`[Cycle ${cycleNum}] WebSocket error`, 'error')
+          reject(new Error('WebSocket connection error'))
+        }
+      })
+      .catch(err => {
+        addLog(`[Cycle ${cycleNum}] ${err.message}`, 'error')
+        reject(err)
+      })
+    })
+  }
+
   const startTrace = async () => {
     if (!host.trim()) {
       addLog('Target host or IP address is required', 'error')
       return
     }
 
+    isStoppingRef.current = false
     setStatus('running')
     setHops([])
     setLogs([])
     setCommand('')
+    setCycleStats({})
+    setCurrentCycle(1)
 
-    try {
-      const res = await fetch('/api/trace/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: host.trim(), max_hops: Number(maxHops), probes: Number(probes), protocol }),
-      })
+    let cycle = 1
+    const maxCycles = loopEnabled ? (loopCount === 0 ? Infinity : loopCount) : 1
 
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Failed to start trace')
-      }
+    while (!isStoppingRef.current && cycle <= maxCycles) {
+      setCurrentCycle(cycle)
+      setIsWaitingNextCycle(false)
 
-      const data = await res.json()
-      setCommand(data.command || `traceroute -n -m ${maxHops} ${host}`)
-      addLog(`Started route trace to ${host.trim()}...`, 'info')
+      try {
+        const cycleHops = await runOneTraceCycle(cycle)
+        if (isStoppingRef.current) break
 
-      // Connect WebSocket
-      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const wsUrl = `${proto}://${window.location.host}/ws/trace/${data.trace_id}`
-      const ws = new WebSocket(wsUrl)
-      wsRef.current = ws
+        if (cycleHops && cycleHops.length > 0) {
+          updateCumulativeStats(cycleHops)
+        }
 
-      ws.onmessage = (evt) => {
-        try {
-          const msg = JSON.parse(evt.data)
-          if (msg.type === 'log') {
-            addLog(msg.message)
-          } else if (msg.type === 'hop') {
-            setHops(prev => {
-              const existingIndex = prev.findIndex(h => h.hop === msg.data.hop)
-              if (existingIndex >= 0) {
-                const next = [...prev]
-                next[existingIndex] = msg.data
-                return next
-              }
-              return [...prev, msg.data].sort((a, b) => a.hop - b.hop)
-            })
-          } else if (msg.type === 'complete') {
-            setStatus('complete')
-            addLog('Route trace completed.', 'info')
-            ws.close()
-          } else if (msg.type === 'error') {
-            setStatus('error')
-            addLog(`Error: ${msg.message}`, 'error')
-            ws.close()
+        // If more cycles remain, wait for the configured interval
+        if (cycle < maxCycles && !isStoppingRef.current) {
+          setIsWaitingNextCycle(true)
+          addLog(`[Cycle ${cycle}] Finished. Waiting ${loopInterval}s before cycle ${cycle + 1}...`, 'info')
+
+          for (let sec = loopInterval; sec > 0; sec--) {
+            if (isStoppingRef.current) break
+            setCountdown(sec)
+            await new Promise(r => { timerRef.current = setTimeout(r, 1000) })
           }
-        } catch (e) {
-          console.error(e)
+          setCountdown(0)
+          if (isStoppingRef.current) break
         }
+      } catch (err) {
+        if (isStoppingRef.current) break
+        addLog(`Trace stopped on cycle ${cycle}: ${err.message}`, 'error')
+        break
       }
 
-      ws.onerror = () => {
-        setStatus('error')
-        addLog('WebSocket connection error', 'error')
-      }
-
-      ws.onclose = () => {
-        if (status === 'running') {
-          setStatus('complete')
-        }
-      }
-
-    } catch (err) {
-      setStatus('error')
-      addLog(err.message, 'error')
+      cycle++
     }
+
+    setIsWaitingNextCycle(false)
+    setStatus(isStoppingRef.current ? 'idle' : 'complete')
   }
 
   const stopTrace = () => {
+    isStoppingRef.current = true
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+    }
     if (wsRef.current) {
       wsRef.current.close()
     }
+    setIsWaitingNextCycle(false)
     setStatus('idle')
+    addLog('Route trace stopped by user.', 'info')
   }
 
   // Calculate stats
@@ -241,10 +341,80 @@ export default function TraceRoute({ initialHost = '' }) {
               </div>
             </div>
 
-            <div className="btn-group">
+            {/* ── Loop Mode Settings ── */}
+            <div className="form-group" style={{ marginTop: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label className="form-label" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🔁 Loop Mode</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={loopEnabled}
+                    onChange={e => setLoopEnabled(e.target.checked)}
+                    disabled={status === 'running'}
+                    style={{ accentColor: '#10b981', width: 16, height: 16, cursor: 'pointer' }}
+                  />
+                  <span style={{ fontWeight: 600, color: loopEnabled ? '#10b981' : 'var(--text-muted)' }}>
+                    {loopEnabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </label>
+              </div>
+
+              {loopEnabled && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.2fr 1fr',
+                  gap: 10,
+                  padding: '10px 12px',
+                  background: 'rgba(0,0,0,0.25)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid rgba(16,185,129,0.2)',
+                }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Cycles (0 = ∞)</label>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {[
+                        { val: 0, label: '∞' },
+                        { val: 3, label: '3' },
+                        { val: 5, label: '5' },
+                        { val: 10, label: '10' },
+                      ].map(opt => (
+                        <button
+                          key={opt.val}
+                          type="button"
+                          className={`btn ${loopCount === opt.val ? 'btn-primary' : 'btn-ghost'}`}
+                          style={{ flex: 1, padding: '4px 0', fontSize: 11 }}
+                          onClick={() => setLoopCount(opt.val)}
+                          disabled={status === 'running'}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Delay (sec)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      style={{ padding: '4px 8px', fontSize: 11 }}
+                      value={loopInterval}
+                      min={1}
+                      max={60}
+                      onChange={e => setLoopInterval(Math.max(1, Math.min(60, Number(e.target.value))))}
+                      disabled={status === 'running'}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="btn-group" style={{ marginTop: 8 }}>
               {status !== 'running' ? (
                 <button className="btn btn-primary btn-full" onClick={startTrace}>
-                  📍 Start Route Trace
+                  {loopEnabled ? '🔁 Start Loop Trace' : '📍 Start Route Trace'}
                 </button>
               ) : (
                 <button className="btn btn-danger btn-full" onClick={stopTrace}>
@@ -279,6 +449,16 @@ export default function TraceRoute({ initialHost = '' }) {
           {/* Summary Cards */}
           {hops.length > 0 && (
             <div className="summary-cards">
+              {loopEnabled && (
+                <div className="summary-card" style={{ borderColor: isWaitingNextCycle ? 'var(--yellow)' : 'var(--border)' }}>
+                  <div className="summary-label">
+                    {isWaitingNextCycle ? '⏳ Next Cycle' : '🔁 Cycle'}
+                  </div>
+                  <div className="summary-value cyan" style={{ fontSize: isWaitingNextCycle ? '16px' : '22px' }}>
+                    {isWaitingNextCycle ? `In ${countdown}s...` : `${currentCycle} / ${loopCount === 0 ? '∞' : loopCount}`}
+                  </div>
+                </div>
+              )}
               <div className="summary-card">
                 <div className="summary-label">Total Hops</div>
                 <div className="summary-value cyan">{hops.length}</div>
@@ -302,7 +482,11 @@ export default function TraceRoute({ initialHost = '' }) {
             <div className="card">
               <h2 className="card-title">
                 📈 Hop Latency (RTT ms) &amp; IP Map
-                {status === 'running' && <span className="live-badge">● TRACING...</span>}
+                {status === 'running' && (
+                  <span className="live-badge">
+                    {isWaitingNextCycle ? `⏳ WAITING ${countdown}s` : `● TRACING (CYCLE ${currentCycle})...`}
+                  </span>
+                )}
               </h2>
               <div style={{ width: '100%', height: 320, marginTop: 12 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -324,6 +508,7 @@ export default function TraceRoute({ initialHost = '' }) {
                       content={({ active, payload }) => {
                         if (!active || !payload || !payload.length) return null
                         const data = payload[0].payload
+                        const stat = cycleStats[data.hop]
                         return (
                           <div style={{
                             background: '#0f172a',
@@ -336,11 +521,16 @@ export default function TraceRoute({ initialHost = '' }) {
                               Hop {data.hop}: {data.ip}
                             </div>
                             <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>
-                              Avg Latency: <strong>{data.avg_rtt !== null ? `${data.avg_rtt} ms` : 'Request timed out'}</strong>
+                              Current Latency: <strong>{data.avg_rtt !== null ? `${data.avg_rtt} ms` : 'Request timed out'}</strong>
                             </div>
-                            {data.rtt1 !== null && (
+                            {stat && stat.count > 1 && (
+                              <div style={{ fontSize: 11, color: '#10b981', marginTop: 3 }}>
+                                Multi-cycle: Min {stat.min}ms | Avg {stat.avg}ms | Max {stat.max}ms
+                              </div>
+                            )}
+                            {data.rtts && data.rtts.length > 0 && (
                               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                Probes: {data.rtt1}ms | {data.rtt2}ms | {data.rtt3}ms
+                                Probes: {data.rtts.join('ms | ')}ms
                               </div>
                             )}
                           </div>
@@ -365,15 +555,18 @@ export default function TraceRoute({ initialHost = '' }) {
           {/* ── Hop Details Table ── */}
           {hops.length > 0 && (
             <div className="card">
-              <h2 className="card-title">🌐 Route Hops Details</h2>
+              <h2 className="card-title">
+                🌐 Route Hops Details {loopEnabled && currentCycle > 1 && <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', marginLeft: 8 }}>(Cumulative across {currentCycle} cycles)</span>}
+              </h2>
               <div style={{ overflowX: 'auto', marginTop: 12 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--text-muted)' }}>
                       <th style={{ padding: '8px 12px' }}>Hop #</th>
                       <th style={{ padding: '8px 12px' }}>IP Address</th>
-                      <th style={{ padding: '8px 12px' }}>Probe Latency Values</th>
-                      <th style={{ padding: '8px 12px' }}>Avg Latency</th>
+                      <th style={{ padding: '8px 12px' }}>Current RTT</th>
+                      {loopEnabled && <th style={{ padding: '8px 12px' }}>Min / Avg / Max</th>}
+                      <th style={{ padding: '8px 12px' }}>Latest Probes</th>
                       <th style={{ padding: '8px 12px' }}>Status</th>
                     </tr>
                   </thead>
@@ -388,6 +581,8 @@ export default function TraceRoute({ initialHost = '' }) {
                         ? 'var(--cyan)'
                         : 'var(--yellow)'
 
+                      const stat = cycleStats[h.hop]
+
                       const probeText = h.rtts && h.rtts.length > 0
                         ? h.rtts.map(r => `${r} ms`).join(' | ')
                         : [h.rtt1, h.rtt2, h.rtt3].filter(r => r !== null).map(r => `${r} ms`).join(' | ') || '*'
@@ -398,11 +593,18 @@ export default function TraceRoute({ initialHost = '' }) {
                           <td style={{ padding: '8px 12px', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: isTimeout ? 'var(--text-muted)' : '#10b981' }}>
                             {h.ip}
                           </td>
-                          <td style={{ padding: '8px 12px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--text-secondary)' }}>
-                            {probeText}
-                          </td>
                           <td style={{ padding: '8px 12px', fontWeight: 700, color: rttColor }}>
                             {h.avg_rtt !== null ? `${h.avg_rtt} ms` : 'Timed out'}
+                          </td>
+                          {loopEnabled && (
+                            <td style={{ padding: '8px 12px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--text-primary)' }}>
+                              {stat && stat.avg !== null
+                                ? `${stat.min} / ${stat.avg} / ${stat.max} ms`
+                                : '-'}
+                            </td>
+                          )}
+                          <td style={{ padding: '8px 12px', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--text-secondary)' }}>
+                            {probeText}
                           </td>
                           <td style={{ padding: '8px 12px' }}>
                             <span style={{

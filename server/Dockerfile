@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 # Install iperf3 binary
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends iperf3 traceroute iputils-ping && \
+    apt-get install -y --no-install-recommends iperf3 traceroute iputils-ping nmap whois bind9-dnsutils fping && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

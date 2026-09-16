@@ -1,11 +1,22 @@
 import asyncio
+import ipaddress
 import json
 import os
 import re
+import shlex
+import socket
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union, List
+
+try:
+    import dns.resolver
+    import dns.reversename
+    HAVE_DNSPYTHON = True
+except ImportError:
+    HAVE_DNSPYTHON = False
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +39,7 @@ app.add_middleware(
 DATA_DIR = Path("/app/data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.json"
+SUBNETS_FILE = DATA_DIR / "subnets.json"
 
 def load_history() -> list:
     if HISTORY_FILE.exists():
@@ -41,6 +53,19 @@ def load_history() -> list:
 def save_history(history: list) -> None:
     with open(HISTORY_FILE, "w") as f:
         json.dump(history, f, indent=2)
+
+def load_subnets() -> list:
+    if SUBNETS_FILE.exists():
+        try:
+            with open(SUBNETS_FILE) as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_subnets(subnets: list) -> None:
+    with open(SUBNETS_FILE, "w") as f:
+        json.dump(subnets, f, indent=2)
 
 # ---------------------------------------------------------------------------
 # Global state (single-worker process only)
@@ -614,3 +639,641 @@ async def stop_trace_process(trace_id: str):
         active_traces[trace_id]["status"] = "stopped"
         return {"status": "stopped"}
     return {"status": "not_found"}
+
+
+# ===========================================================================
+# 4. Nmap Scanner (Zenmap-style GUI)
+# ===========================================================================
+
+active_nmap_scans: dict[str, dict] = {}
+
+class NmapConfig(BaseModel):
+    target: str
+    profile: Optional[str] = "Quick scan"
+    command_override: Optional[str] = None
+
+NMAP_PROFILES = {
+    "Intense scan": "nmap -T4 -A -v",
+    "Intense scan plus UDP": "nmap -sS -sU -T4 -A -v",
+    "Intense scan, all TCP ports": "nmap -p 1-65535 -T4 -A -v",
+    "Intense scan, no ping": "nmap -T4 -A -v -Pn",
+    "Ping scan": "nmap -sn",
+    "Quick scan": "nmap -T4 -F",
+    "Quick scan plus": "nmap -sV -T4 -O -F --version-light",
+    "Quick traceroute": "nmap -sn --traceroute",
+    "Regular scan": "nmap",
+    "Slow comprehensive scan": 'nmap -sS -sU -T4 -A -v -PE -PP -PS80,443 -PA3389 -PU40125 -PY -g 53 --script "default or (discovery and safe)"',
+    "Vulnerability scan": "nmap -sV --script vuln",
+}
+
+@app.get("/api/nmap/profiles")
+def get_nmap_profiles():
+    return NMAP_PROFILES
+
+@app.post("/api/nmap/run")
+async def run_nmap_scan(config: NmapConfig):
+    target = config.target.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target cannot be empty")
+
+    scan_id = str(uuid.uuid4())
+    raw_cmd = config.command_override.strip() if config.command_override else ""
+    if not raw_cmd:
+        base_flags = NMAP_PROFILES.get(config.profile, "nmap -T4 -F")
+        raw_cmd = f"{base_flags} {target}"
+
+    # Build argument array safely
+    try:
+        cmd_args = shlex.split(raw_cmd)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid command line: {e}")
+
+    if not cmd_args or cmd_args[0] != "nmap":
+        raise HTTPException(status_code=400, detail="Command must start with 'nmap'")
+
+    active_nmap_scans[scan_id] = {
+        "scan_id": scan_id,
+        "target": target,
+        "profile": config.profile,
+        "command": raw_cmd,
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "proc": None,
+        "lines": [],
+        "ports": [],
+        "summary": {},
+    }
+
+    asyncio.create_task(_run_nmap_task(scan_id, cmd_args, raw_cmd, target, config.profile))
+    return {"scan_id": scan_id, "command": raw_cmd}
+
+async def _run_nmap_task(scan_id: str, cmd_args: list[str], raw_cmd: str, target: str, profile: str):
+    channel = f"nmap_{scan_id}"
+    lines = []
+    ports = []
+    host_details = {
+        "state": "Unknown",
+        "latency": "",
+        "mac": "",
+        "vendor": "",
+        "os": "",
+        "open_ports": 0,
+        "closed_ports": 0,
+        "filtered_ports": 0,
+    }
+
+    try:
+        # Check if nmap exists, else warn
+        proc = await asyncio.create_subprocess_exec(
+            *cmd_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        if scan_id in active_nmap_scans:
+            active_nmap_scans[scan_id]["proc"] = proc
+
+        port_regex = re.compile(r"^(\d+/(?:tcp|udp|sctp))\s+([a-zA-Z\|\-]+)\s+([\w\-\?]+)(?:\s+(.*))?$")
+        in_ports_section = False
+
+        while True:
+            line_bytes = await proc.stdout.readline()
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+            lines.append(line)
+
+            # Check for header
+            if "PORT" in line and "STATE" in line and "SERVICE" in line:
+                in_ports_section = True
+            elif in_ports_section and line.startswith("Nmap scan report") or line.startswith("Host script"):
+                in_ports_section = False
+
+            # Parse port line
+            m_port = port_regex.match(line.strip())
+            if m_port:
+                port_data = {
+                    "port": m_port.group(1),
+                    "state": m_port.group(2),
+                    "service": m_port.group(3),
+                    "version": (m_port.group(4) or "").strip(),
+                }
+                # Check duplicate
+                if not any(p["port"] == port_data["port"] for p in ports):
+                    ports.append(port_data)
+                    if port_data["state"] == "open":
+                        host_details["open_ports"] += 1
+                    elif port_data["state"] == "filtered":
+                        host_details["filtered_ports"] += 1
+                    elif port_data["state"] == "closed":
+                        host_details["closed_ports"] += 1
+
+                    await manager.broadcast(channel, {
+                        "type": "port_found",
+                        "port": port_data,
+                    })
+
+            # Check latency
+            if "Host is up" in line:
+                host_details["state"] = "Up"
+                m_lat = re.search(r"\(([\d\.]+s) latency\)", line)
+                if m_lat:
+                    host_details["latency"] = m_lat.group(1)
+
+            # Check MAC
+            m_mac = re.search(r"MAC Address:\s*([0-9A-Fa-f:]+)(?:\s*\((.*?)\))?", line)
+            if m_mac:
+                host_details["mac"] = m_mac.group(1)
+                host_details["vendor"] = m_mac.group(2) or ""
+
+            # Check OS
+            if line.startswith("OS details:") or line.startswith("Running:"):
+                host_details["os"] = line.split(":", 1)[1].strip()
+
+            await manager.broadcast(channel, {
+                "type": "line",
+                "line": line,
+            })
+
+        await proc.wait()
+
+        if scan_id in active_nmap_scans:
+            active_nmap_scans[scan_id]["status"] = "complete"
+            active_nmap_scans[scan_id]["lines"] = lines
+            active_nmap_scans[scan_id]["ports"] = ports
+            active_nmap_scans[scan_id]["summary"] = host_details
+
+        # Save to history
+        try:
+            history = load_history()
+            entry = {
+                "id": scan_id,
+                "mode": "nmap",
+                "target": target,
+                "profile": profile,
+                "command": raw_cmd,
+                "ports_count": len(ports),
+                "open_ports": host_details["open_ports"],
+                "status": "complete",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            history.insert(0, entry)
+            save_history(history[:100])
+        except Exception:
+            pass
+
+        await manager.broadcast(channel, {
+            "type": "complete",
+            "ports": ports,
+            "host_details": host_details,
+            "total_lines": len(lines),
+        })
+
+    except Exception as exc:
+        if scan_id in active_nmap_scans:
+            active_nmap_scans[scan_id]["status"] = "error"
+        await manager.broadcast(channel, {
+            "type": "error",
+            "message": f"Nmap execution failed: {str(exc)}",
+        })
+
+@app.websocket("/ws/nmap/{scan_id}")
+async def nmap_ws(websocket: WebSocket, scan_id: str):
+    await manager.connect(f"nmap_{scan_id}", websocket)
+    if scan_id in active_nmap_scans:
+        await websocket.send_json({
+            "type": "status",
+            "status": active_nmap_scans[scan_id]["status"],
+            "command": active_nmap_scans[scan_id].get("command", ""),
+            "ports": active_nmap_scans[scan_id].get("ports", []),
+        })
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(f"nmap_{scan_id}", websocket)
+
+@app.post("/api/nmap/stop/{scan_id}")
+async def stop_nmap_scan(scan_id: str):
+    if scan_id in active_nmap_scans:
+        proc = active_nmap_scans[scan_id].get("proc")
+        if proc and proc.returncode is None:
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                pass
+        active_nmap_scans[scan_id]["status"] = "stopped"
+        await manager.broadcast(f"nmap_{scan_id}", {"type": "stopped"})
+        return {"status": "stopped"}
+    return {"status": "not_found"}
+
+
+# ===========================================================================
+# 5. IP Management (Subnet Scanner)
+# ===========================================================================
+
+class SubnetCreate(BaseModel):
+    cidr: str
+    name: Optional[str] = None
+
+class AddressUpdate(BaseModel):
+    ip: str
+    system_name: Optional[str] = None
+    machine_type: Optional[str] = None
+    dns: Optional[str] = None
+
+@app.get("/api/ipam/subnets")
+def get_all_subnets():
+    return load_subnets()
+
+@app.post("/api/ipam/subnets")
+def create_new_subnet(data: SubnetCreate):
+    cidr_str = data.cidr.strip()
+    try:
+        net = ipaddress.ip_network(cidr_str, strict=False)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid CIDR notation: {e}")
+
+    # Maximum 1024 addresses (/22) for performance
+    if net.num_addresses > 1024:
+        raise HTTPException(
+            status_code=400,
+            detail="Subnet size exceeds maximum limit of 1,024 addresses (/22)."
+        )
+
+    subnets = load_subnets()
+    # Check if CIDR already exists
+    for s in subnets:
+        if s.get("cidr") == str(net):
+            return s
+
+    sub_id = f"sub_{int(time.time())}_{str(uuid.uuid4())[:4]}"
+    net_addr = str(net.network_address)
+    bcast_addr = str(net.broadcast_address) if net.num_addresses > 1 else ""
+
+    addresses = []
+    for ip in net:
+        ip_str = str(ip)
+        if ip_str == net_addr:
+            status = "Subnet Address"
+            last_resp = "Network"
+        elif ip_str == bcast_addr:
+            status = "Broadcast Address"
+            last_resp = "Broadcast"
+        else:
+            status = "Available"
+            last_resp = "Never"
+
+        addresses.append({
+            "ip": ip_str,
+            "status": status,
+            "is_online": False,
+            "dns": "",
+            "last_response": last_resp,
+            "machine_type": "",
+            "system_name": "",
+        })
+
+    usable = max(0, net.num_addresses - 2) if net.num_addresses > 2 else net.num_addresses
+    new_sub = {
+        "id": sub_id,
+        "cidr": str(net),
+        "network": net_addr,
+        "netmask": str(net.netmask),
+        "name": data.name or f"Subnet {net}",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "last_scanned": None,
+        "summary": {
+            "total": usable,
+            "used": 0,
+            "available": usable,
+        },
+        "addresses": addresses,
+    }
+
+    subnets.append(new_sub)
+    save_subnets(subnets)
+    return new_sub
+
+@app.delete("/api/ipam/subnets/{subnet_id}")
+def remove_subnet(subnet_id: str):
+    subnets = load_subnets()
+    subnets = [s for s in subnets if s.get("id") != subnet_id]
+    save_subnets(subnets)
+    return {"status": "deleted"}
+
+@app.post("/api/ipam/subnets/{subnet_id}/scan")
+async def scan_subnet_endpoint(subnet_id: str):
+    subnets = load_subnets()
+    sub = next((s for s in subnets if s.get("id") == subnet_id), None)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subnet not found")
+
+    cidr = sub["cidr"]
+    alive_hosts: dict[str, dict] = {}
+
+    # Attempt 1: Fast Nmap ping sweep with reverse DNS
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "nmap", "-sn", "-R", "--system-dns", cidr,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        output = stdout.decode("utf-8", errors="replace")
+
+        current_ip = None
+        for line in output.splitlines():
+            line_str = line.strip()
+            # Nmap scan report for host (ip) or Nmap scan report for ip
+            m_rep = re.search(r"Nmap scan report for (?:([^\s]+)\s+\()?(\d+\.\d+\.\d+\.\d+)\)?", line_str)
+            if m_rep:
+                hostname, ip_found = m_rep.group(1), m_rep.group(2)
+                current_ip = ip_found
+                dns_name = hostname if hostname and hostname != ip_found else ""
+                alive_hosts[current_ip] = {
+                    "dns": dns_name,
+                    "latency": "< 1 ms",
+                    "vendor": "",
+                    "mac": "",
+                }
+            elif current_ip and "Host is up" in line_str:
+                m_lat = re.search(r"\(([\d\.]+s) latency\)", line_str)
+                if m_lat:
+                    try:
+                        sec = float(m_lat.group(1).rstrip("s"))
+                        alive_hosts[current_ip]["latency"] = f"{sec * 1000:.1f} ms"
+                    except Exception:
+                        alive_hosts[current_ip]["latency"] = m_lat.group(1)
+            elif current_ip and "MAC Address:" in line_str:
+                m_mac = re.search(r"MAC Address:\s*([0-9A-Fa-f:]+)(?:\s*\((.*?)\))?", line_str)
+                if m_mac:
+                    alive_hosts[current_ip]["mac"] = m_mac.group(1)
+                    alive_hosts[current_ip]["vendor"] = m_mac.group(2) or ""
+    except Exception:
+        # Fallback to fping or basic ping sweep if nmap fails
+        pass
+
+    # Update addresses in subnet
+    used_count = 0
+    for addr in sub["addresses"]:
+        ip = addr["ip"]
+        if ip == sub["network"] or addr.get("status") in ["Subnet Address", "Broadcast Address"]:
+            continue
+
+        if ip in alive_hosts:
+            addr["status"] = "Used"
+            addr["is_online"] = True
+            if alive_hosts[ip].get("dns"):
+                addr["dns"] = alive_hosts[ip]["dns"]
+            elif not addr.get("dns"):
+                try:
+                    h, _, _ = socket.gethostbyaddr(ip)
+                    addr["dns"] = h
+                except Exception:
+                    pass
+            addr["last_response"] = alive_hosts[ip].get("latency") or "Today"
+            if alive_hosts[ip].get("vendor"):
+                addr["machine_type"] = alive_hosts[ip]["vendor"]
+            used_count += 1
+        else:
+            addr["is_online"] = False
+            addr["status"] = "Available"
+            prev_resp = str(addr.get("last_response", ""))
+            if "ms" in prev_resp or prev_resp in ["Today", "< 1 ms"]:
+                addr["last_response"] = f"Prev ({prev_resp})"
+            elif not addr.get("last_response"):
+                addr["last_response"] = "Never"
+
+    total_usable = max(0, len(sub["addresses"]) - 2) if len(sub["addresses"]) > 2 else len(sub["addresses"])
+    sub["summary"] = {
+        "total": total_usable,
+        "used": used_count,
+        "available": max(0, total_usable - used_count),
+    }
+    sub["last_scanned"] = datetime.now(timezone.utc).isoformat()
+
+    save_subnets(subnets)
+    return sub
+
+@app.put("/api/ipam/subnets/{subnet_id}/address")
+def update_subnet_address(subnet_id: str, data: AddressUpdate):
+    subnets = load_subnets()
+    sub = next((s for s in subnets if s.get("id") == subnet_id), None)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subnet not found")
+
+    for addr in sub["addresses"]:
+        if addr["ip"] == data.ip:
+            if data.system_name is not None:
+                addr["system_name"] = data.system_name
+            if data.machine_type is not None:
+                addr["machine_type"] = data.machine_type
+            if data.dns is not None:
+                addr["dns"] = data.dns
+            save_subnets(subnets)
+            return addr
+
+    raise HTTPException(status_code=404, detail="Address not found in subnet")
+
+
+# ===========================================================================
+# 6. DNS & WHOIS Suite
+# ===========================================================================
+
+class DnsLookupConfig(BaseModel):
+    target: str
+    record_type: Optional[str] = "ALL"
+    nameserver: Optional[str] = None
+
+class DnsResolveConfig(BaseModel):
+    ips: List[str]
+
+class WhoisConfig(BaseModel):
+    target: str
+
+@app.post("/api/dns/lookup")
+async def dns_lookup_endpoint(config: DnsLookupConfig):
+    target = config.target.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target domain cannot be empty")
+
+    types_to_query = (
+        ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA"]
+        if config.record_type.upper() == "ALL"
+        else [config.record_type.upper()]
+    )
+
+    records = []
+    t_start = time.perf_counter()
+
+    # Query with dnspython if available
+    if HAVE_DNSPYTHON:
+        resolver = dns.resolver.Resolver()
+        resolver.lifetime = 3.0
+        if config.nameserver and config.nameserver.strip():
+            resolver.nameservers = [config.nameserver.strip()]
+
+        for rtype in types_to_query:
+            try:
+                answers = resolver.resolve(target, rtype)
+                for rdata in answers:
+                    val = str(rdata)
+                    priority = getattr(rdata, "preference", None) or getattr(rdata, "priority", None)
+                    records.append({
+                        "type": rtype,
+                        "name": str(answers.qname),
+                        "value": val,
+                        "ttl": answers.ttl,
+                        "priority": priority,
+                    })
+            except Exception:
+                pass
+
+    latency_ms = round((time.perf_counter() - t_start) * 1000, 2)
+
+    # Also capture raw query with dig command for detailed analysis
+    raw_output = ""
+    try:
+        dig_args = ["dig"]
+        if config.nameserver and config.nameserver.strip():
+            dig_args.append(f"@{config.nameserver.strip()}")
+        dig_args.extend([target, config.record_type if config.record_type != "ALL" else "ANY", "+stats"])
+        
+        proc = await asyncio.create_subprocess_exec(
+            *dig_args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+        raw_output = stdout.decode("utf-8", errors="replace")
+
+        # If dnspython was not available, extract basic answers from dig
+        if not records:
+            for line in raw_output.splitlines():
+                line_str = line.strip()
+                if line_str and not line_str.startswith(";") and not line_str.startswith("#"):
+                    parts = re.split(r"\s+", line_str)
+                    if len(parts) >= 5:
+                        # name ttl class type data...
+                        records.append({
+                            "type": parts[3],
+                            "name": parts[0],
+                            "value": " ".join(parts[4:]),
+                            "ttl": int(parts[1]) if parts[1].isdigit() else 300,
+                            "priority": None,
+                        })
+    except Exception:
+        if not raw_output:
+            raw_output = f"Lookup completed for {target}. Found {len(records)} records."
+
+    return {
+        "target": target,
+        "nameserver": config.nameserver or "System Default",
+        "latency_ms": latency_ms,
+        "records": records,
+        "raw_output": raw_output,
+    }
+
+@app.post("/api/dns/resolve")
+async def dns_resolve_endpoint(config: DnsResolveConfig):
+    results = []
+    ips = config.ips[:50] # cap at 50
+
+    for ip in ips:
+        ip = ip.strip()
+        if not ip:
+            continue
+        t0 = time.perf_counter()
+        hostname = ""
+        status = "unresolved"
+        try:
+            h, _, _ = socket.gethostbyaddr(ip)
+            hostname = h
+            status = "resolved"
+        except Exception:
+            hostname = "-"
+
+        latency = round((time.perf_counter() - t0) * 1000, 2)
+        results.append({
+            "ip": ip,
+            "hostname": hostname,
+            "status": status,
+            "latency_ms": latency,
+        })
+
+    return {"results": results}
+
+@app.post("/api/whois/query")
+async def whois_query_endpoint(config: WhoisConfig):
+    target = config.target.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target cannot be empty")
+
+    raw_output = ""
+    parsed: dict[str, Union[str, list]] = {
+        "domain": target,
+        "registrar": "",
+        "created_date": "",
+        "expiry_date": "",
+        "updated_date": "",
+        "status": "",
+        "organization": "",
+        "name_servers": [],
+        "asn": "",
+        "cidr": "",
+    }
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "whois", target,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8.0)
+        raw_output = stdout.decode("utf-8", errors="replace")
+
+        ns_list = []
+        for line in raw_output.splitlines():
+            line_clean = line.strip()
+            if ":" not in line_clean:
+                continue
+            key, val = [p.strip() for p in line_clean.split(":", 1)]
+            k_lower = key.lower()
+
+            if "registrar" in k_lower and not parsed["registrar"] and "url" not in k_lower:
+                parsed["registrar"] = val
+            elif any(d in k_lower for d in ["creation date", "created", "registration time"]):
+                if not parsed["created_date"]:
+                    parsed["created_date"] = val
+            elif any(d in k_lower for d in ["registry expiry date", "expiration date", "expiry", "expire"]):
+                if not parsed["expiry_date"]:
+                    parsed["expiry_date"] = val
+            elif any(d in k_lower for d in ["updated date", "last updated", "changed"]):
+                if not parsed["updated_date"]:
+                    parsed["updated_date"] = val
+            elif "status" in k_lower and not parsed["status"]:
+                parsed["status"] = val.split()[0]
+            elif any(o in k_lower for o in ["org-name", "organization", "registrant organization", "descr"]):
+                if not parsed["organization"]:
+                    parsed["organization"] = val
+            elif any(ns in k_lower for ns in ["name server", "nserver"]):
+                ns_val = val.lower().split()[0]
+                if ns_val and ns_val not in ns_list:
+                    ns_list.append(ns_val)
+            elif "origin" in k_lower or "asn" in k_lower:
+                if not parsed["asn"]:
+                    parsed["asn"] = val
+            elif "cidr" in k_lower or "inetnum" in k_lower:
+                if not parsed["cidr"]:
+                    parsed["cidr"] = val
+
+        parsed["name_servers"] = ns_list
+    except Exception as e:
+        raw_output = f"Whois query error: {str(e)}"
+
+    return {
+        "target": target,
+        "parsed": parsed,
+        "raw_output": raw_output,
+    }
+

@@ -4,6 +4,9 @@ import ClientMode from './components/ClientMode'
 import TestHistory from './components/TestHistory'
 import TraceRoute from './components/TraceRoute'
 import RemoteAccess from './components/RemoteAccess'
+import NmapScanner from './components/NmapScanner'
+import IpManagement from './components/IpManagement'
+import DnsWhois from './components/DnsWhois'
 
 export default function App() {
   const [appMode, setAppMode] = useState('full') // 'full' | 'portable'
@@ -50,11 +53,14 @@ export default function App() {
         { id: 'history', label: 'Test History', icon: '📊' },
       ]
     : [
-        { id: 'client',  label: 'Client Mode',  icon: '⚡' },
-        { id: 'trace',   label: 'Route Trace',  icon: '📍' },
-        { id: 'server',  label: 'Server Mode',  icon: '🖥️', hasDot: true },
-        { id: 'history', label: 'Test History', icon: '📊' },
-        { id: 'remote',  label: 'Remote Access', icon: '🛡️' },
+        { id: 'client',  label: 'Client Mode',    icon: '⚡' },
+        { id: 'trace',   label: 'Route Trace',    icon: '📍' },
+        { id: 'nmap',    label: 'Nmap Scanner',   icon: '🔍' },
+        { id: 'ipam',    label: 'IP Management',  icon: '🌐' },
+        { id: 'dns',     label: 'DNS & WHOIS',    icon: '🔎' },
+        { id: 'server',  label: 'Server Mode',    icon: '🖥️', hasDot: true },
+        { id: 'history', label: 'Test History',   icon: '📊' },
+        { id: 'remote',  label: 'Remote Access',  icon: '🛡️' },
       ]
 
   const handleStartTraceFromClient = (host) => {
@@ -108,6 +114,15 @@ export default function App() {
           )}
           {!isPortable && activeTab === 'trace' && (
             <TraceRoute initialHost={traceHost} />
+          )}
+          {!isPortable && activeTab === 'nmap' && (
+            <NmapScanner />
+          )}
+          {!isPortable && activeTab === 'ipam' && (
+            <IpManagement />
+          )}
+          {!isPortable && activeTab === 'dns' && (
+            <DnsWhois />
           )}
           {!isPortable && activeTab === 'server' && (
             <ServerMode onStatusChange={setServerStatus} />

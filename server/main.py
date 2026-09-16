@@ -969,51 +969,94 @@ async def scan_subnet_endpoint(subnet_id: str):
         raise HTTPException(status_code=404, detail="Subnet not found")
 
     cidr = sub["cidr"]
-    alive_hosts: dict[str, dict] = {}
+    alive_hosts: dict[str, dict] = {} # ip -> {latency, dns}
 
-    # Attempt 1: Fast Nmap ping sweep with reverse DNS
+    # Attempt 1: Fast fping ICMP echo sweep (accurate, no false positives from TCP 443 proxy/firewall)
     try:
         proc = await asyncio.create_subprocess_exec(
-            "nmap", "-sn", "-R", "--system-dns", cidr,
+            "fping", "-g", "-q", "-C", "1", "-t", "150", cidr,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.STDOUT
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
         output = stdout.decode("utf-8", errors="replace")
 
-        current_ip = None
         for line in output.splitlines():
             line_str = line.strip()
-            # Nmap scan report for host (ip) or Nmap scan report for ip
-            m_rep = re.search(r"Nmap scan report for (?:([^\s]+)\s+\()?(\d+\.\d+\.\d+\.\d+)\)?", line_str)
-            if m_rep:
-                hostname, ip_found = m_rep.group(1), m_rep.group(2)
-                current_ip = ip_found
-                dns_name = hostname if hostname and hostname != ip_found else ""
-                alive_hosts[current_ip] = {
-                    "dns": dns_name,
-                    "latency": "< 1 ms",
-                    "vendor": "",
-                    "mac": "",
-                }
-            elif current_ip and "Host is up" in line_str:
-                m_lat = re.search(r"\(([\d\.]+s) latency\)", line_str)
-                if m_lat:
+            if ":" in line_str:
+                parts = [p.strip() for p in line_str.split(":", 1)]
+                ip_part = parts[0]
+                lat_part = parts[1]
+                # If latency is a number (e.g. 9.37)
+                if lat_part and lat_part != "-":
                     try:
-                        sec = float(m_lat.group(1).rstrip("s"))
-                        alive_hosts[current_ip]["latency"] = f"{sec * 1000:.1f} ms"
-                    except Exception:
-                        alive_hosts[current_ip]["latency"] = m_lat.group(1)
-            elif current_ip and "MAC Address:" in line_str:
-                m_mac = re.search(r"MAC Address:\s*([0-9A-Fa-f:]+)(?:\s*\((.*?)\))?", line_str)
-                if m_mac:
-                    alive_hosts[current_ip]["mac"] = m_mac.group(1)
-                    alive_hosts[current_ip]["vendor"] = m_mac.group(2) or ""
+                        val = float(lat_part)
+                        alive_hosts[ip_part] = {
+                            "latency": f"{val:.1f} ms",
+                            "dns": "",
+                        }
+                    except ValueError:
+                        alive_hosts[ip_part] = {
+                            "latency": f"{lat_part} ms",
+                            "dns": "",
+                        }
     except Exception:
-        # Fallback to fping or basic ping sweep if nmap fails
         pass
 
-    # Update addresses in subnet
+    # Attempt 2: If fping returned nothing, fallback to Nmap with ICMP-only (-PE --send-ip)
+    if not alive_hosts:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "nmap", "-sn", "-PE", "--send-ip", cidr,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            output = stdout.decode("utf-8", errors="replace")
+
+            current_ip = None
+            for line in output.splitlines():
+                line_str = line.strip()
+                m_rep = re.search(r"Nmap scan report for (?:([^\s]+)\s+\()?(\d+\.\d+\.\d+\.\d+)\)?", line_str)
+                if m_rep:
+                    hostname, ip_found = m_rep.group(1), m_rep.group(2)
+                    current_ip = ip_found
+                    dns_name = hostname if hostname and hostname != ip_found else ""
+                    alive_hosts[current_ip] = {
+                        "dns": dns_name,
+                        "latency": "< 1 ms",
+                    }
+                elif current_ip and "Host is up" in line_str:
+                    m_lat = re.search(r"\(([\d\.]+s) latency\)", line_str)
+                    if m_lat:
+                        try:
+                            sec = float(m_lat.group(1).rstrip("s"))
+                            alive_hosts[current_ip]["latency"] = f"{sec * 1000:.1f} ms"
+                        except Exception:
+                            alive_hosts[current_ip]["latency"] = m_lat.group(1)
+        except Exception:
+            pass
+
+    # Reverse DNS resolution for alive hosts concurrently (up to 30)
+    async def _resolve_dns(ip_addr: str):
+        try:
+            loop = asyncio.get_running_loop()
+            h, _, _ = await asyncio.wait_for(
+                loop.run_in_executor(None, socket.gethostbyaddr, ip_addr),
+                timeout=0.8
+            )
+            return ip_addr, h
+        except Exception:
+            return ip_addr, ""
+
+    ips_to_resolve = [ip for ip in alive_hosts.keys() if not alive_hosts[ip].get("dns")][:50]
+    if ips_to_resolve:
+        dns_results = await asyncio.gather(*[_resolve_dns(ip) for ip in ips_to_resolve], return_exceptions=True)
+        for res in dns_results:
+            if isinstance(res, tuple) and res[1]:
+                alive_hosts[res[0]]["dns"] = res[1]
+
+    # Update addresses in subnet while preserving system_name, custom notes, etc.
     used_count = 0
     for addr in sub["addresses"]:
         ip = addr["ip"]
@@ -1025,15 +1068,7 @@ async def scan_subnet_endpoint(subnet_id: str):
             addr["is_online"] = True
             if alive_hosts[ip].get("dns"):
                 addr["dns"] = alive_hosts[ip]["dns"]
-            elif not addr.get("dns"):
-                try:
-                    h, _, _ = socket.gethostbyaddr(ip)
-                    addr["dns"] = h
-                except Exception:
-                    pass
             addr["last_response"] = alive_hosts[ip].get("latency") or "Today"
-            if alive_hosts[ip].get("vendor"):
-                addr["machine_type"] = alive_hosts[ip]["vendor"]
             used_count += 1
         else:
             addr["is_online"] = False

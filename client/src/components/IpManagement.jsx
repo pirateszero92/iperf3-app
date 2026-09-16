@@ -14,6 +14,52 @@ export default function IpManagement() {
   const [newName, setNewName] = useState('')
   const [addError, setAddError] = useState('')
 
+  // Inline edit state
+  const [editingIp, setEditingIp] = useState(null)
+  const [editSystemName, setEditSystemName] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  const startEdit = (addr) => {
+    setEditingIp(addr.ip)
+    setEditSystemName(addr.system_name || '')
+  }
+
+  const saveEdit = async (ip) => {
+    if (!selectedSubnet) return
+    setSavingEdit(true)
+    try {
+      const res = await fetch(`/api/ipam/subnets/${selectedSubnet.id}/address`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: ip,
+          system_name: editSystemName.trim()
+        })
+      })
+      if (res.ok) {
+        setSubnets(prev => prev.map(s => {
+          if (s.id !== selectedSubnet.id) return s
+          return {
+            ...s,
+            addresses: s.addresses.map(a => a.ip === ip ? { ...a, system_name: editSystemName.trim() } : a)
+          }
+        }))
+        setEditingIp(null)
+      } else {
+        const err = await res.json()
+        alert(`Failed to save: ${err.detail || 'Error'}`)
+      }
+    } catch (err) {
+      alert(`Failed to save: ${err.message}`)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const cancelEdit = () => {
+    setEditingIp(null)
+  }
+
   // Load subnets
   const fetchSubnets = async () => {
     try {
@@ -292,8 +338,56 @@ export default function IpManagement() {
                             <td className="col-machine">
                               {addr.machine_type ? <span>{addr.machine_type}</span> : <span className="text-dim">-</span>}
                             </td>
-                            <td className="col-system">
-                              {addr.system_name ? <span>{addr.system_name}</span> : <span className="text-dim">-</span>}
+                            <td className="col-system" style={{ minWidth: 160 }}>
+                              {editingIp === addr.ip ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <input
+                                    type="text"
+                                    className="input-field"
+                                    style={{ fontSize: 12, padding: '3px 8px', height: 26, width: '100%', minWidth: 120 }}
+                                    value={editSystemName}
+                                    onChange={(e) => setEditSystemName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') saveEdit(addr.ip)
+                                      if (e.key === 'Escape') cancelEdit()
+                                    }}
+                                    autoFocus
+                                    placeholder="Enter system name..."
+                                    disabled={savingEdit}
+                                  />
+                                  <button
+                                    className="btn-tiny"
+                                    style={{ background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}
+                                    onClick={() => saveEdit(addr.ip)}
+                                    disabled={savingEdit}
+                                    title="Save"
+                                  >
+                                    ✓
+                                  </button>
+                                  <button
+                                    className="btn-tiny"
+                                    style={{ background: 'rgba(255,255,255,0.1)', color: 'var(--text-muted)', border: 'none', borderRadius: 4, padding: '3px 7px', cursor: 'pointer', fontSize: 11 }}
+                                    onClick={cancelEdit}
+                                    disabled={savingEdit}
+                                    title="Cancel"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                  <span style={{ fontWeight: addr.system_name ? 600 : 400, color: addr.system_name ? 'var(--text)' : 'inherit' }}>
+                                    {addr.system_name ? addr.system_name : <span className="text-dim">-</span>}
+                                  </span>
+                                  <button
+                                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px 5px', borderRadius: 4, fontSize: 13, opacity: 0.7 }}
+                                    onClick={() => startEdit(addr)}
+                                    title="Edit System Name"
+                                  >
+                                    ✏️
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         )

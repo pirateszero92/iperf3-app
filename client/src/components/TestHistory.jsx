@@ -32,9 +32,10 @@ export default function TestHistory() {
   const exportOne = entry => {
     const blob = new Blob([JSON.stringify(entry, null, 2)], { type: 'application/json' })
     const url  = URL.createObjectURL(blob)
+    const hostName = entry.config?.host || entry.target || 'scan'
     const a    = Object.assign(document.createElement('a'), {
       href: url,
-      download: `iperf3-${entry.config.host}-${entry.id.slice(0, 8)}.json`,
+      download: `history-${hostName}-${entry.id.slice(0, 8)}.json`,
     })
     a.click()
     URL.revokeObjectURL(url)
@@ -82,35 +83,48 @@ export default function TestHistory() {
             const open = expanded === entry.id
             const cfg = entry.config || {}
             const isTrace = entry.type === 'trace' || !!entry.hops
+            const isNmap = entry.mode === 'nmap'
+            const hostDisplay = cfg.host ? `${cfg.host}${cfg.port ? `:${cfg.port}` : ''}` : (entry.target || 'Unknown Host')
 
             return (
               <div key={entry.id} className={`history-item ${open ? 'expanded' : ''}`}>
                 {/* ── Row ── */}
                 <div className="history-header" onClick={() => toggle(entry.id)}>
                   <div className="history-meta">
-                    <span className={`protocol-tag ${isTrace ? 'udp' : (cfg.protocol || 'tcp')}`} style={isTrace ? { background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' } : {}}>
-                      {isTrace ? '📍 TRACE' : (cfg.protocol || 'TCP').toUpperCase()}
-                    </span>
+                    {isNmap ? (
+                      <span className="protocol-tag" style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)' }}>
+                        🔍 NMAP
+                      </span>
+                    ) : (
+                      <span className={`protocol-tag ${isTrace ? 'udp' : (cfg.protocol || 'tcp')}`} style={isTrace ? { background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' } : {}}>
+                        {isTrace ? '📍 TRACE' : (cfg.protocol || 'TCP').toUpperCase()}
+                      </span>
+                    )}
                     <span className="history-host">
-                      {cfg.host}{cfg.port ? `:${cfg.port}` : ''}
+                      {hostDisplay}
                     </span>
-                    <span className="history-date">{fmtDate(entry.started_at)}</span>
+                    <span className="history-date">{fmtDate(entry.started_at || entry.completed_at)}</span>
+                    {isNmap && (
+                      <span style={{ fontSize: 10, color: 'var(--accent)', background: 'rgba(99,102,241,0.12)', padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>
+                        {entry.profile || 'Scan'}
+                      </span>
+                    )}
                     {isTrace && (entry.cycles > 1 || entry.summary?.cycles > 1) && (
                       <span style={{ fontSize: 10, color: '#10b981', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>
                         🔁 {entry.cycles || entry.summary?.cycles} CYCLES
                       </span>
                     )}
-                    {!isTrace && cfg.reverse && (
+                    {!isTrace && !isNmap && cfg.reverse && (
                       <span style={{ fontSize: 10, color: 'var(--yellow)', background: 'var(--yellow-dim)', padding: '1px 6px', borderRadius: 4 }}>
                         ↓ REV
                       </span>
                     )}
-                    {!isTrace && cfg.bidir && (
+                    {!isTrace && !isNmap && cfg.bidir && (
                       <span style={{ fontSize: 10, color: 'var(--purple)', background: 'rgba(168,85,247,0.12)', padding: '1px 6px', borderRadius: 4 }}>
                         ↕ BIDIR
                       </span>
                     )}
-                    {!isTrace && cfg.parallel > 1 && (
+                    {!isTrace && !isNmap && cfg.parallel > 1 && (
                       <span style={{ fontSize: 10, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: 4 }}>
                         ×{cfg.parallel}
                       </span>
@@ -118,7 +132,18 @@ export default function TestHistory() {
                   </div>
 
                   <div className="history-stats">
-                    {isTrace ? (
+                    {isNmap ? (
+                      <>
+                        <div className="stat">
+                          <div className="stat-label">Open Ports</div>
+                          <div className="stat-value green" style={{ fontWeight: 700 }}>{entry.open_ports ?? 0}</div>
+                        </div>
+                        <div className="stat">
+                          <div className="stat-label">Scanned Ports</div>
+                          <div className="stat-value cyan">{entry.ports_count ?? 0}</div>
+                        </div>
+                      </>
+                    ) : isTrace ? (
                       entry.summary && (
                         <>
                           {(entry.cycles > 1 || entry.summary.cycles > 1) && (
@@ -192,36 +217,63 @@ export default function TestHistory() {
                     <div className="detail-grid">
                       <div className="detail-chip">
                         <span>Mode</span>
-                        <strong>{isTrace ? 'Route Trace' : 'iPerf3 Client'}</strong>
+                        <strong>{isNmap ? 'Nmap Scanner' : isTrace ? 'Route Trace' : 'iPerf3 Client'}</strong>
                       </div>
-                      <div className="detail-chip">
-                        <span>Protocol</span>
-                        <strong>{(cfg.protocol || 'icmp').toUpperCase()}</strong>
-                      </div>
-                      {isTrace ? (
+                      {isNmap ? (
                         <>
                           <div className="detail-chip">
-                            <span>Max Hops</span>
-                            <strong>{cfg.max_hops || 30}</strong>
+                            <span>Profile</span>
+                            <strong>{entry.profile || 'Default'}</strong>
                           </div>
                           <div className="detail-chip">
-                            <span>Repeat / Probes</span>
-                            <strong>{cfg.probes || 3}</strong>
+                            <span>Target</span>
+                            <strong>{entry.target}</strong>
+                          </div>
+                          <div className="detail-chip">
+                            <span>Open Ports</span>
+                            <strong>{entry.open_ports ?? 0}</strong>
                           </div>
                         </>
                       ) : (
                         <>
                           <div className="detail-chip">
-                            <span>Duration</span>
-                            <strong>{cfg.duration} s</strong>
+                            <span>Protocol</span>
+                            <strong>{(cfg.protocol || 'icmp').toUpperCase()}</strong>
                           </div>
-                          <div className="detail-chip">
-                            <span>Parallel</span>
-                            <strong>{cfg.parallel} stream{cfg.parallel > 1 ? 's' : ''}</strong>
-                          </div>
+                          {isTrace ? (
+                            <>
+                              <div className="detail-chip">
+                                <span>Max Hops</span>
+                                <strong>{cfg.max_hops || 30}</strong>
+                              </div>
+                              <div className="detail-chip">
+                                <span>Repeat / Probes</span>
+                                <strong>{cfg.probes || 3}</strong>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="detail-chip">
+                                <span>Duration</span>
+                                <strong>{cfg.duration} s</strong>
+                              </div>
+                              <div className="detail-chip">
+                                <span>Parallel</span>
+                                <strong>{cfg.parallel} stream{cfg.parallel > 1 ? 's' : ''}</strong>
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
                     </div>
+
+                    {isNmap && entry.command && (
+                      <div style={{ marginTop: 10 }}>
+                        <code style={{ background: '#0f172a', padding: '6px 10px', borderRadius: 6, display: 'block', fontSize: 12, color: 'var(--accent)' }}>
+                          {entry.command}
+                        </code>
+                      </div>
+                    )}
 
                     {/* Content / Chart / Table */}
                     {isTrace ? (

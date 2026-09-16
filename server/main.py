@@ -1074,11 +1074,12 @@ async def scan_subnet_endpoint(subnet_id: str):
             addr["is_online"] = False
             addr["status"] = "Available"
             prev_resp = str(addr.get("last_response", ""))
-            if prev_resp.startswith("Prev ("):
-                pass
-            elif "ms" in prev_resp or prev_resp in ["Today", "< 1 ms"]:
-                addr["last_response"] = f"Prev ({prev_resp})"
-            elif not addr.get("last_response"):
+            m_ms = re.search(r"([\d\.]+\s*ms|< 1 ms)", prev_resp)
+            if m_ms:
+                addr["last_response"] = f"Prev ({m_ms.group(1)})"
+            elif prev_resp in ["Today", "Yesterday"]:
+                addr["last_response"] = "Prev (Recent)"
+            else:
                 addr["last_response"] = "Never"
 
     total_usable = max(0, len(sub["addresses"]) - 2) if len(sub["addresses"]) > 2 else len(sub["addresses"])

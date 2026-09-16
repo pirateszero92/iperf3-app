@@ -202,6 +202,26 @@ body {
   padding: 32px 32px 48px;
 }
 
+/* ===== Remote Access Full Viewport Mode ===== */
+.main-content.main-content-remote {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.content-inner.content-inner-remote {
+  max-width: 100%;
+  width: 100%;
+  height: 100%;
+  padding: 14px 20px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 /* ===== Page ===== */
 .page-header {
   display: flex;

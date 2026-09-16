@@ -98,8 +98,8 @@ export default function App() {
       </aside>
 
       {/* ── Main ── */}
-      <main className="main-content">
-        <div className="content-inner">
+      <main className={`main-content ${activeTab === 'remote' ? 'main-content-remote' : ''}`}>
+        <div className={`content-inner ${activeTab === 'remote' ? 'content-inner-remote' : ''}`}>
           {activeTab === 'client' && (
             <ClientMode
               onComplete={() => setHistoryKey(k => k + 1)}

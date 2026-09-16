@@ -15,16 +15,25 @@ export default function RemoteAccess({ remotePort = 8088 }) {
   }
 
   return (
-    <div className="remote-container" style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 12 }}>
+    <div className="remote-container" style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      width: '100%',
+      flex: 1,
+      minHeight: 0,
+      gap: 12,
+    }}>
       {/* ── Top Header Bar ── */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         background: 'var(--bg-card)',
-        padding: '12px 18px',
+        padding: '10px 18px',
         borderRadius: 'var(--radius-md)',
         border: '1px solid var(--border)',
+        flexShrink: 0,
         flexWrap: 'wrap',
         gap: 12,
       }}>
@@ -32,8 +41,8 @@ export default function RemoteAccess({ remotePort = 8088 }) {
           <div style={{
             fontSize: 20,
             background: 'rgba(16,185,129,0.15)',
-            width: 40,
-            height: 40,
+            width: 38,
+            height: 38,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -42,7 +51,7 @@ export default function RemoteAccess({ remotePort = 8088 }) {
             🛡️
           </div>
           <div>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
               Remote Jump Server
               <span style={{
                 fontSize: 10,
@@ -85,19 +94,23 @@ export default function RemoteAccess({ remotePort = 8088 }) {
 
       {/* ── Embedded Iframe ── */}
       <div style={{
+        position: 'relative',
         flex: 1,
-        minHeight: 'calc(100vh - 160px)',
+        width: '100%',
+        minHeight: '580px',
         borderRadius: 'var(--radius-md)',
         overflow: 'hidden',
         border: '1px solid var(--border)',
-        background: '#0a0f1d',
-        position: 'relative',
+        background: '#080a0f',
       }}>
         <iframe
           key={iframeKey}
           src={remoteUrl}
           title="Jump Remote Access"
           style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
             width: '100%',
             height: '100%',
             border: 'none',

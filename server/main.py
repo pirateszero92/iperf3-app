@@ -40,6 +40,34 @@ DATA_DIR = Path("/app/data")
 DATA_DIR.mkdir(exist_ok=True)
 HISTORY_FILE = DATA_DIR / "history.json"
 SUBNETS_FILE = DATA_DIR / "subnets.json"
+VLANS_FILE = DATA_DIR / "vlans.json"
+
+DEFAULT_VLANS = [
+    {
+        "id": "vlan_10",
+        "vlan_id": 10,
+        "name": "Corporate Lab",
+        "description": "Primary testing and R&D network",
+        "color": "#00d4ff",
+        "created_at": "2026-09-16T00:00:00Z",
+    },
+    {
+        "id": "vlan_20",
+        "vlan_id": 20,
+        "name": "Servers & DMZ",
+        "description": "Production server farm and service proxies",
+        "color": "#a855f7",
+        "created_at": "2026-09-16T00:00:00Z",
+    },
+    {
+        "id": "vlan_30",
+        "vlan_id": 30,
+        "name": "Management",
+        "description": "Network switches, routers, and ILO interfaces",
+        "color": "#00e887",
+        "created_at": "2026-09-16T00:00:00Z",
+    },
+]
 
 def load_history() -> list:
     if HISTORY_FILE.exists():
@@ -66,6 +94,20 @@ def load_subnets() -> list:
 def save_subnets(subnets: list) -> None:
     with open(SUBNETS_FILE, "w") as f:
         json.dump(subnets, f, indent=2)
+
+def load_vlans() -> list:
+    if VLANS_FILE.exists():
+        try:
+            with open(VLANS_FILE) as f:
+                return json.load(f)
+        except Exception:
+            return []
+    save_vlans(DEFAULT_VLANS)
+    return DEFAULT_VLANS
+
+def save_vlans(vlans: list) -> None:
+    with open(VLANS_FILE, "w") as f:
+        json.dump(vlans, f, indent=2)
 
 # ---------------------------------------------------------------------------
 # Global state (single-worker process only)
@@ -868,12 +910,28 @@ async def stop_nmap_scan(scan_id: str):
 
 
 # ===========================================================================
-# 5. IP Management (Subnet Scanner)
+# 5. IP Management (Subnet Scanner) & VLAN Management
 # ===========================================================================
+
+class VlanCreate(BaseModel):
+    vlan_id: int
+    name: str
+    description: Optional[str] = ""
+    color: Optional[str] = "#00d4ff"
+
+class VlanUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
 
 class SubnetCreate(BaseModel):
     cidr: str
     name: Optional[str] = None
+    vlan_id: Optional[int] = None
+
+class SubnetMetaUpdate(BaseModel):
+    name: Optional[str] = None
+    vlan_id: Optional[int] = None
 
 class AddressUpdate(BaseModel):
     ip: str
@@ -881,9 +939,96 @@ class AddressUpdate(BaseModel):
     machine_type: Optional[str] = None
     dns: Optional[str] = None
 
+@app.get("/api/ipam/vlans")
+def get_all_vlans():
+    vlans = load_vlans()
+    subnets = load_subnets()
+    result = []
+    for v in vlans:
+        v_id = v["vlan_id"]
+        assigned = [
+            {"id": s["id"], "cidr": s["cidr"], "name": s.get("name", s["cidr"])}
+            for s in subnets
+            if s.get("vlan_id") == v_id
+        ]
+        result.append({
+            **v,
+            "assigned_subnets": assigned,
+            "subnet_count": len(assigned),
+        })
+    return result
+
+@app.post("/api/ipam/vlans")
+def create_new_vlan(data: VlanCreate):
+    if not (1 <= data.vlan_id <= 4094):
+        raise HTTPException(status_code=400, detail="VLAN ID must be between 1 and 4094.")
+    if not data.name.strip():
+        raise HTTPException(status_code=400, detail="VLAN Name is required.")
+
+    vlans = load_vlans()
+    if any(v["vlan_id"] == data.vlan_id for v in vlans):
+        raise HTTPException(status_code=400, detail=f"VLAN {data.vlan_id} already exists.")
+
+    new_vlan = {
+        "id": f"vlan_{data.vlan_id}",
+        "vlan_id": data.vlan_id,
+        "name": data.name.strip(),
+        "description": (data.description or "").strip(),
+        "color": data.color or "#00d4ff",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    vlans.append(new_vlan)
+    save_vlans(vlans)
+    return new_vlan
+
+@app.put("/api/ipam/vlans/{vlan_id}")
+def update_existing_vlan(vlan_id: int, data: VlanUpdate):
+    vlans = load_vlans()
+    v = next((item for item in vlans if item["vlan_id"] == vlan_id), None)
+    if not v:
+        raise HTTPException(status_code=404, detail="VLAN not found")
+
+    if data.name is not None:
+        v["name"] = data.name.strip()
+    if data.description is not None:
+        v["description"] = data.description.strip()
+    if data.color is not None:
+        v["color"] = data.color.strip()
+
+    save_vlans(vlans)
+    return v
+
+@app.delete("/api/ipam/vlans/{vlan_id}")
+def delete_existing_vlan(vlan_id: int):
+    vlans = load_vlans()
+    vlans = [v for v in vlans if v["vlan_id"] != vlan_id]
+    save_vlans(vlans)
+
+    subnets = load_subnets()
+    updated = False
+    for s in subnets:
+        if s.get("vlan_id") == vlan_id:
+            s["vlan_id"] = None
+            updated = True
+    if updated:
+        save_subnets(subnets)
+
+    return {"status": "deleted", "vlan_id": vlan_id}
+
 @app.get("/api/ipam/subnets")
 def get_all_subnets():
-    return load_subnets()
+    subnets = load_subnets()
+    updated = False
+    for s in subnets:
+        if "vlan_id" not in s:
+            if "corporate" in s.get("name", "").lower():
+                s["vlan_id"] = 10
+            else:
+                s["vlan_id"] = None
+            updated = True
+    if updated:
+        save_subnets(subnets)
+    return subnets
 
 @app.post("/api/ipam/subnets")
 def create_new_subnet(data: SubnetCreate):
@@ -940,6 +1085,7 @@ def create_new_subnet(data: SubnetCreate):
         "network": net_addr,
         "netmask": str(net.netmask),
         "name": data.name or f"Subnet {net}",
+        "vlan_id": data.vlan_id if data.vlan_id and data.vlan_id > 0 else None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "last_scanned": None,
         "summary": {
@@ -953,6 +1099,21 @@ def create_new_subnet(data: SubnetCreate):
     subnets.append(new_sub)
     save_subnets(subnets)
     return new_sub
+
+@app.put("/api/ipam/subnets/{subnet_id}/meta")
+def update_subnet_metadata(subnet_id: str, data: SubnetMetaUpdate):
+    subnets = load_subnets()
+    sub = next((s for s in subnets if s.get("id") == subnet_id), None)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subnet not found")
+
+    if data.name is not None:
+        sub["name"] = data.name.strip()
+    if data.vlan_id is not None:
+        sub["vlan_id"] = data.vlan_id if data.vlan_id > 0 else None
+
+    save_subnets(subnets)
+    return sub
 
 @app.delete("/api/ipam/subnets/{subnet_id}")
 def remove_subnet(subnet_id: str):

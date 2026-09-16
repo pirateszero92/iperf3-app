@@ -170,6 +170,10 @@ class TraceConfig(BaseModel):
 async def health():
     return {"status": "ok", "iperf3_exists": IPERF3_PATH.exists()}
 
+@app.get("/api/mode")
+async def get_app_mode():
+    return {"mode": "portable"}
+
 # Stub for server status since portable is client-only
 @app.get("/api/server/status")
 async def get_server_status():

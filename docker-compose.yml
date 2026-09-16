@@ -2,6 +2,8 @@ services:
   backend:
     build:
       context: ./server
+    environment:
+      - REMOTE_PORT=${REMOTE_PORT:-8088}
     ports:
       - "8001:8000"
     volumes:
@@ -20,12 +22,33 @@ services:
       - "3001:80"
     depends_on:
       - backend
+      - remote
+    networks:
+      - iperf3-net
+    restart: unless-stopped
+
+  remote:
+    build:
+      context: ./remote
+    container_name: iperf3-remote-access
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      APP_USER: admin
+      APP_PASS: password
+      APP_SECRET: change-this-to-a-long-random-string
+      GUACAMOLE_CRYPT_KEY: JumpRemoteDesktopCryptKey2026!!
+    ports:
+      - "${REMOTE_PORT:-8088}:8080"
+    volumes:
+      - remote_data:/data
     networks:
       - iperf3-net
     restart: unless-stopped
 
 volumes:
   history_data:
+  remote_data:
 
 networks:
   iperf3-net:

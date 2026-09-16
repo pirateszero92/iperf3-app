@@ -176,6 +176,10 @@ class TraceConfig(BaseModel):
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
+@app.get("/api/mode")
+async def get_app_mode():
+    return {"mode": "full", "remote_port": int(os.environ.get("REMOTE_PORT", 8088))}
+
 # ---------------------------------------------------------------------------
 # Server Mode
 # ---------------------------------------------------------------------------

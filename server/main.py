@@ -499,6 +499,8 @@ async def _run_trace_task(trace_id: str, cmd: list, config: TraceConfig):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
+        if trace_id in active_traces:
+            active_traces[trace_id]["proc"] = proc
         hops = []
         async for raw in proc.stdout:
             text = raw.decode(errors="replace").strip()
@@ -568,3 +570,16 @@ async def trace_ws(websocket: WebSocket, trace_id: str):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(f"trace_{trace_id}", websocket)
+
+@app.post("/api/trace/stop/{trace_id}")
+async def stop_trace_process(trace_id: str):
+    if trace_id in active_traces:
+        proc = active_traces[trace_id].get("proc")
+        if proc and proc.returncode is None:
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                pass
+        active_traces[trace_id]["status"] = "stopped"
+        return {"status": "stopped"}
+    return {"status": "not_found"}

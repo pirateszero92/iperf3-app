@@ -66,8 +66,8 @@ export default function TraceRoute({ initialHost = '' }) {
   const [command, setCommand] = useState('')
 
   // ── Loop Mode State ──
-  const [loopEnabled, setLoopEnabled] = useState(false)
-  const [loopCount, setLoopCount] = useState(0) // 0 = Infinite / Continuous, or 3, 5, 10
+  const [loopEnabled, setLoopEnabled] = useState(true)
+  const [loopCount, setLoopCount] = useState(0) // 0 = Infinite / Continuous until stopped
   const [loopInterval, setLoopInterval] = useState(2) // seconds delay between cycles
   const [currentCycle, setCurrentCycle] = useState(1)
   const [countdown, setCountdown] = useState(0)
@@ -77,6 +77,7 @@ export default function TraceRoute({ initialHost = '' }) {
   const wsRef = useRef(null)
   const isStoppingRef = useRef(false)
   const timerRef = useRef(null)
+  const activeTraceIdRef = useRef(null)
 
   useEffect(() => {
     if (initialHost && !host) {
@@ -143,6 +144,7 @@ export default function TraceRoute({ initialHost = '' }) {
         return res.json()
       })
       .then(data => {
+        activeTraceIdRef.current = data.trace_id
         setCommand(data.command || `traceroute -n -m ${maxHops} ${host}`)
         addLog(`[Cycle ${cycleNum}] Starting route trace to ${host.trim()}...`, 'info')
 
@@ -185,12 +187,26 @@ export default function TraceRoute({ initialHost = '' }) {
           }
         }
 
+        ws.onclose = () => {
+          if (isStoppingRef.current) {
+            resolve(currentCycleHops)
+          }
+        }
+
         ws.onerror = () => {
+          if (isStoppingRef.current) {
+            resolve(currentCycleHops)
+            return
+          }
           addLog(`[Cycle ${cycleNum}] WebSocket error`, 'error')
           reject(new Error('WebSocket connection error'))
         }
       })
       .catch(err => {
+        if (isStoppingRef.current) {
+          resolve([])
+          return
+        }
         addLog(`[Cycle ${cycleNum}] ${err.message}`, 'error')
         reject(err)
       })
@@ -212,9 +228,12 @@ export default function TraceRoute({ initialHost = '' }) {
     setCurrentCycle(1)
 
     let cycle = 1
-    const maxCycles = loopEnabled ? (loopCount === 0 ? Infinity : loopCount) : 1
+    const isContinuous = loopEnabled && (loopCount === 0)
 
-    while (!isStoppingRef.current && cycle <= maxCycles) {
+    while (!isStoppingRef.current) {
+      if (!isContinuous && !loopEnabled && cycle > 1) break
+      if (!isContinuous && loopEnabled && loopCount > 0 && cycle > loopCount) break
+
       setCurrentCycle(cycle)
       setIsWaitingNextCycle(false)
 
@@ -226,10 +245,11 @@ export default function TraceRoute({ initialHost = '' }) {
           updateCumulativeStats(cycleHops)
         }
 
-        // If more cycles remain, wait for the configured interval
-        if (cycle < maxCycles && !isStoppingRef.current) {
+        // If loop continues (continuous or cycles remain), pause for interval
+        const willContinue = !isStoppingRef.current && (isContinuous || (loopEnabled && cycle < loopCount))
+        if (willContinue) {
           setIsWaitingNextCycle(true)
-          addLog(`[Cycle ${cycle}] Finished. Waiting ${loopInterval}s before cycle ${cycle + 1}...`, 'info')
+          addLog(`[Cycle ${cycle}] Finished. Waiting ${loopInterval}s before cycle ${cycle + 1}... (Click "Stop" to end)`, 'info')
 
           for (let sec = loopInterval; sec > 0; sec--) {
             if (isStoppingRef.current) break
@@ -249,16 +269,23 @@ export default function TraceRoute({ initialHost = '' }) {
     }
 
     setIsWaitingNextCycle(false)
-    setStatus(isStoppingRef.current ? 'idle' : 'complete')
+    setStatus('idle')
+    activeTraceIdRef.current = null
   }
 
   const stopTrace = () => {
     isStoppingRef.current = true
     if (timerRef.current) {
       clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    if (activeTraceIdRef.current) {
+      fetch(`/api/trace/stop/${activeTraceIdRef.current}`, { method: 'POST' }).catch(() => {})
+      activeTraceIdRef.current = null
     }
     if (wsRef.current) {
       wsRef.current.close()
+      wsRef.current = null
     }
     setIsWaitingNextCycle(false)
     setStatus('idle')
@@ -341,71 +368,67 @@ export default function TraceRoute({ initialHost = '' }) {
               </div>
             </div>
 
-            {/* ── Loop Mode Settings ── */}
+            {/* ── Trace Mode Selection ── */}
             <div className="form-group" style={{ marginTop: 4 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <label className="form-label" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>🔁 Loop Mode</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={loopEnabled}
-                    onChange={e => setLoopEnabled(e.target.checked)}
-                    disabled={status === 'running'}
-                    style={{ accentColor: '#10b981', width: 16, height: 16, cursor: 'pointer' }}
-                  />
-                  <span style={{ fontWeight: 600, color: loopEnabled ? '#10b981' : 'var(--text-muted)' }}>
-                    {loopEnabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </label>
+              <label className="form-label">Trace Mode</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className={`btn ${loopEnabled ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1.2, padding: '7px 8px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  onClick={() => setLoopEnabled(true)}
+                  disabled={status === 'running'}
+                >
+                  <span>🔁 Continuous Loop</span>
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${!loopEnabled ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 0.8, padding: '7px 8px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  onClick={() => setLoopEnabled(false)}
+                  disabled={status === 'running'}
+                >
+                  <span>📍 Single Run</span>
+                </button>
               </div>
 
               {loopEnabled && (
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1.2fr 1fr',
-                  gap: 10,
+                  marginTop: 10,
                   padding: '10px 12px',
                   background: 'rgba(0,0,0,0.25)',
                   borderRadius: 'var(--radius-sm)',
-                  border: '1px solid rgba(16,185,129,0.2)',
+                  border: '1px solid rgba(16,185,129,0.25)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
                 }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Cycles (0 = ∞)</label>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {[
-                        { val: 0, label: '∞' },
-                        { val: 3, label: '3' },
-                        { val: 5, label: '5' },
-                        { val: 10, label: '10' },
-                      ].map(opt => (
-                        <button
-                          key={opt.val}
-                          type="button"
-                          className={`btn ${loopCount === opt.val ? 'btn-primary' : 'btn-ghost'}`}
-                          style={{ flex: 1, padding: '4px 0', fontSize: 11 }}
-                          onClick={() => setLoopCount(opt.val)}
-                          disabled={status === 'running'}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#10b981', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>♾️</span> Loops until stopped manually
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      Press [Stop] to finish
+                    </span>
                   </div>
 
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Delay (sec)</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      style={{ padding: '4px 8px', fontSize: 11 }}
-                      value={loopInterval}
-                      min={1}
-                      max={60}
-                      onChange={e => setLoopInterval(Math.max(1, Math.min(60, Number(e.target.value))))}
-                      disabled={status === 'running'}
-                    />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
+                      Interval between loops:
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="number"
+                        className="form-input"
+                        style={{ width: 56, padding: '3px 6px', fontSize: 11, textAlign: 'center' }}
+                        value={loopInterval}
+                        min={1}
+                        max={60}
+                        onChange={e => setLoopInterval(Math.max(1, Math.min(60, Number(e.target.value))))}
+                        disabled={status === 'running'}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>sec</span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -414,11 +437,15 @@ export default function TraceRoute({ initialHost = '' }) {
             <div className="btn-group" style={{ marginTop: 8 }}>
               {status !== 'running' ? (
                 <button className="btn btn-primary btn-full" onClick={startTrace}>
-                  {loopEnabled ? '🔁 Start Loop Trace' : '📍 Start Route Trace'}
+                  {loopEnabled ? '🔁 Start Continuous Loop Trace' : '📍 Start Route Trace'}
                 </button>
               ) : (
-                <button className="btn btn-danger btn-full" onClick={stopTrace}>
-                  ■ Stop Trace
+                <button
+                  className="btn btn-danger btn-full"
+                  onClick={stopTrace}
+                  style={{ background: '#ef4444', borderColor: '#dc2626' }}
+                >
+                  ■ Stop Route Trace {loopEnabled && `(Cycle ${currentCycle})`}
                 </button>
               )}
             </div>
@@ -452,10 +479,10 @@ export default function TraceRoute({ initialHost = '' }) {
               {loopEnabled && (
                 <div className="summary-card" style={{ borderColor: isWaitingNextCycle ? 'var(--yellow)' : 'var(--border)' }}>
                   <div className="summary-label">
-                    {isWaitingNextCycle ? '⏳ Next Cycle' : '🔁 Cycle'}
+                    {isWaitingNextCycle ? '⏳ Next Cycle' : '🔁 Loop Status'}
                   </div>
-                  <div className="summary-value cyan" style={{ fontSize: isWaitingNextCycle ? '16px' : '22px' }}>
-                    {isWaitingNextCycle ? `In ${countdown}s...` : `${currentCycle} / ${loopCount === 0 ? '∞' : loopCount}`}
+                  <div className="summary-value cyan" style={{ fontSize: isWaitingNextCycle ? '15px' : '18px' }}>
+                    {isWaitingNextCycle ? `In ${countdown}s...` : `Cycle ${currentCycle} (∞)`}
                   </div>
                 </div>
               )}

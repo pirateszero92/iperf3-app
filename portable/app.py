@@ -396,10 +396,10 @@ async def run_trace(config: TraceConfig):
         "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
-    asyncio.create_task(_run_trace_task(trace_id, cmd))
+    asyncio.create_task(_run_trace_task(trace_id, cmd, config))
     return {"trace_id": trace_id, "command": " ".join(cmd)}
 
-async def _run_trace_task(trace_id: str, cmd: list):
+async def _run_trace_task(trace_id: str, cmd: list, config: TraceConfig):
     channel = f"trace_{trace_id}"
     try:
         startupinfo = None

@@ -7,6 +7,7 @@ import RemoteAccess from './components/RemoteAccess'
 import NmapScanner from './components/NmapScanner'
 import IpManagement from './components/IpManagement'
 import DnsWhois from './components/DnsWhois'
+import IpCalculator from './components/IpCalculator'
 
 export default function App() {
   const [appMode, setAppMode] = useState('full') // 'full' | 'portable'
@@ -57,6 +58,7 @@ export default function App() {
         { id: 'trace',   label: 'Route Trace',    icon: '📍' },
         { id: 'nmap',    label: 'Nmap Scanner',   icon: '🔍' },
         { id: 'ipam',    label: 'IP Management',  icon: '🌐' },
+        { id: 'ipcalc',  label: 'IP Calculator',  icon: '🧮' },
         { id: 'dns',     label: 'DNS & WHOIS',    icon: '🔎' },
         { id: 'server',  label: 'Server Mode',    icon: '🖥️', hasDot: true },
         { id: 'history', label: 'Test History',   icon: '📊' },
@@ -120,6 +122,9 @@ export default function App() {
           )}
           {!isPortable && activeTab === 'ipam' && (
             <IpManagement />
+          )}
+          {!isPortable && activeTab === 'ipcalc' && (
+            <IpCalculator />
           )}
           {!isPortable && activeTab === 'dns' && (
             <DnsWhois />

@@ -1808,4 +1808,246 @@ body {
   margin-top: 4px;
 }
 
+/* ==========================================================================
+   Modern IP Subnet & VLSM Calculator Styles
+   ========================================================================== */
+
+/* CIDR Range Slider */
+.cidr-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--cyan) 0%, #0070ff 50%, var(--green) 100%);
+  outline: none;
+  margin: 12px 0 6px;
+  cursor: pointer;
+}
+
+.cidr-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--cyan);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.6);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.cidr-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.9);
+}
+
+.cidr-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--cyan);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.6);
+  cursor: pointer;
+}
+
+/* Preset Pills */
+.btn-preset-pill {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-preset-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.btn-preset-pill.active {
+  background: var(--cyan-dim);
+  color: var(--cyan);
+  border-color: rgba(0, 212, 255, 0.35);
+  font-weight: 600;
+}
+
+/* Binary 32-bit Structure */
+.binary-octets-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 800px) {
+  .binary-octets-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.binary-octet-block {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.binary-octet-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.binary-octet-header strong {
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.binary-bits-row {
+  display: flex;
+  gap: 3px;
+  justify-content: space-between;
+}
+
+.bit-pill {
+  flex: 1;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 0;
+  border-radius: 4px;
+  transition: transform 0.12s;
+  cursor: default;
+}
+
+.bit-pill:hover {
+  transform: translateY(-2px);
+}
+
+.bit-pill.bit-network {
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--cyan);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+}
+
+.bit-pill.bit-host {
+  background: rgba(0, 232, 135, 0.1);
+  color: var(--green);
+  border: 1px solid rgba(0, 232, 135, 0.2);
+}
+
+.bit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.bit-net-dot { background: var(--cyan); }
+.bit-host-dot { background: var(--green); }
+
+/* Metric Cards Dashboard Grid */
+.ipcalc-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.metric-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.metric-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--bg-card-hover);
+}
+
+.metric-card.span-2 {
+  grid-column: span 2;
+}
+
+@media (max-width: 680px) {
+  .metric-card.span-2 {
+    grid-column: span 1;
+  }
+}
+
+.metric-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.metric-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.metric-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.metric-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+.metric-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.highlight-cyan { color: var(--cyan) !important; }
+.highlight-green { color: var(--green) !important; }
+.highlight-pink { color: #f472b6 !important; }
+.highlight-amber { color: var(--yellow) !important; }
+
+/* Copy mini button */
+.btn-copy-mini {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-copy-mini:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+
 

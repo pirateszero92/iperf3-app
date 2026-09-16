@@ -1315,3 +1315,201 @@ async def whois_query_endpoint(config: WhoisConfig):
         "raw_output": raw_output,
     }
 
+
+# ---------------------------------------------------------------------------
+# IP Calculator & Subnet Divider Endpoints
+# ---------------------------------------------------------------------------
+
+class IpCalcRequest(BaseModel):
+    cidr: str
+
+class SubnetSplitRequest(BaseModel):
+    cidr: str
+    new_prefix: int
+
+@app.post("/api/tools/ip-calc")
+async def calculate_ip(req: IpCalcRequest):
+    val = req.cidr.strip()
+    if not val:
+        raise HTTPException(status_code=400, detail="CIDR or IP address required")
+
+    try:
+        if "/" not in val:
+            # Check if IPv6 or IPv4
+            if ":" in val:
+                val = f"{val}/64"
+            else:
+                val = f"{val}/24"
+
+        # Try IPv4 network
+        interface = ipaddress.ip_interface(val)
+        ip = interface.ip
+        net = interface.network
+
+        if ip.version == 4:
+            # Octets & binary
+            ip_int = int(ip)
+            net_int = int(net.network_address)
+            mask_int = int(net.netmask)
+            bcast_int = int(net.broadcast_address)
+            wildcard_int = ~mask_int & 0xFFFFFFFF
+            wildcard_mask = str(ipaddress.IPv4Address(wildcard_int))
+
+            first_octet = int(str(ip).split('.')[0])
+            if 1 <= first_octet <= 126:
+                ip_class = "Class A"
+            elif 128 <= first_octet <= 191:
+                ip_class = "Class B"
+            elif 192 <= first_octet <= 223:
+                ip_class = "Class C"
+            elif 224 <= first_octet <= 239:
+                ip_class = "Class D (Multicast)"
+            else:
+                ip_class = "Class E (Experimental)"
+
+            # Scope
+            if ip.is_private:
+                scope = "Private (RFC 1918)"
+            elif ip.is_loopback:
+                scope = "Loopback (127.0.0.0/8)"
+            elif ip.is_link_local:
+                scope = "Link-Local / APIPA (169.254.0.0/16)"
+            elif ip.is_multicast:
+                scope = "Multicast (RFC 5771)"
+            elif ip in ipaddress.ip_network("100.64.0.0/10"):
+                scope = "Carrier-Grade NAT / CGNAT (RFC 6598)"
+            else:
+                scope = "Public Internet"
+
+            prefix = net.prefixlen
+            total_hosts = net.num_addresses
+
+            if prefix == 32:
+                usable_hosts = 1
+                first_usable = str(ip)
+                last_usable = str(ip)
+            elif prefix == 31:
+                usable_hosts = 2
+                first_usable = str(net.network_address)
+                last_usable = str(net.broadcast_address)
+            else:
+                usable_hosts = max(0, total_hosts - 2)
+                first_usable = str(net.network_address + 1)
+                last_usable = str(net.broadcast_address - 1)
+
+            return {
+                "version": 4,
+                "ip": str(ip),
+                "cidr_prefix": prefix,
+                "cidr_notation": f"{net.network_address}/{prefix}",
+                "network_address": str(net.network_address),
+                "broadcast_address": str(net.broadcast_address),
+                "netmask": str(net.netmask),
+                "wildcard_mask": wildcard_mask,
+                "first_usable": first_usable,
+                "last_usable": last_usable,
+                "usable_hosts": usable_hosts,
+                "total_addresses": total_hosts,
+                "ip_class": ip_class,
+                "scope": scope,
+                "binary": {
+                    "ip": f"{ip_int:032b}",
+                    "netmask": f"{mask_int:032b}",
+                    "network": f"{net_int:032b}",
+                    "broadcast": f"{bcast_int:032b}",
+                },
+                "hex": f"0x{ip_int:08X}",
+                "integer": ip_int,
+            }
+
+        else:
+            # IPv6
+            prefix = net.prefixlen
+            subnets_64 = 0
+            if prefix <= 64:
+                subnets_64 = 2 ** (64 - prefix)
+
+            scope = "Global Unicast"
+            if ip.is_private or ip in ipaddress.ip_network("fc00::/7"):
+                scope = "Unique Local (ULA - RFC 4193)"
+            elif ip.is_link_local:
+                scope = "Link-Local (fe80::/10)"
+            elif ip.is_loopback:
+                scope = "Loopback (::1)"
+            elif ip.is_multicast:
+                scope = "Multicast (ff00::/8)"
+
+            return {
+                "version": 6,
+                "ip": str(ip),
+                "cidr_prefix": prefix,
+                "cidr_notation": f"{net.network_address}/{prefix}",
+                "network_address": str(net.network_address),
+                "compressed": ip.compressed,
+                "exploded": ip.exploded,
+                "scope": scope,
+                "total_addresses": str(2 ** (128 - prefix)),
+                "subnets_64": f"{subnets_64:,}" if subnets_64 > 0 else "N/A",
+            }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid IP / CIDR format: {str(e)}")
+
+
+@app.post("/api/tools/subnet-split")
+async def split_subnet(req: SubnetSplitRequest):
+    try:
+        net = ipaddress.ip_network(req.cidr.strip(), strict=False)
+        if req.new_prefix <= net.prefixlen:
+            raise HTTPException(status_code=400, detail=f"New prefix /{req.new_prefix} must be greater than current /{net.prefixlen}")
+        if req.new_prefix > (32 if net.version == 4 else 128):
+            raise HTTPException(status_code=400, detail="Prefix exceeds maximum bits")
+
+        count = 2 ** (req.new_prefix - net.prefixlen)
+        if count > 256:
+            raise HTTPException(status_code=400, detail=f"Cannot generate {count:,} subnets. Maximum display limit is 256 subnets.")
+
+        subnets_gen = net.subnets(new_prefix=req.new_prefix)
+        results = []
+        for i, sub in enumerate(subnets_gen, 1):
+            if net.version == 4:
+                if sub.prefixlen == 32:
+                    first_u, last_u, usable = str(sub.network_address), str(sub.network_address), 1
+                elif sub.prefixlen == 31:
+                    first_u, last_u, usable = str(sub.network_address), str(sub.broadcast_address), 2
+                else:
+                    first_u = str(sub.network_address + 1)
+                    last_u = str(sub.broadcast_address - 1)
+                    usable = max(0, sub.num_addresses - 2)
+
+                results.append({
+                    "index": i,
+                    "cidr": str(sub),
+                    "network": str(sub.network_address),
+                    "netmask": str(sub.netmask),
+                    "broadcast": str(sub.broadcast_address),
+                    "first_usable": first_u,
+                    "last_usable": last_u,
+                    "usable_hosts": usable,
+                    "total_hosts": sub.num_addresses,
+                })
+            else:
+                results.append({
+                    "index": i,
+                    "cidr": str(sub),
+                    "network": str(sub.network_address),
+                    "total_hosts": str(2 ** (128 - sub.prefixlen)),
+                })
+
+        return {
+            "parent_cidr": str(net),
+            "new_prefix": req.new_prefix,
+            "total_subnets": count,
+            "subnets": results,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+

@@ -165,6 +165,8 @@ class TraceConfig(BaseModel):
     max_hops: int = 30
     protocol: str = "icmp"
     probes: int = 3
+    task_id: Optional[str] = None
+    cycle: Optional[int] = 1
 
 @app.get("/api/health")
 async def health():
@@ -444,19 +446,48 @@ async def _run_trace_task(trace_id: str, cmd: list, config: TraceConfig):
             "target_latency": valid_rtts[-1] if valid_rtts else None,
         }
 
-        entry = {
-            "id": trace_id,
-            "type": "trace",
-            "config": config.model_dump(),
-            "command": " ".join(cmd),
-            "hops": hops,
-            "summary": trace_summary,
-            "started_at": active_traces[trace_id]["started_at"],
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        }
+        # Save or update consolidated task in history
         try:
             history = load_history()
-            history.insert(0, entry)
+            record_id = config.task_id if config.task_id else trace_id
+            existing_idx = next((i for i, item in enumerate(history) if item.get("id") == record_id), None)
+
+            if existing_idx is not None:
+                existing = history[existing_idx]
+                prev_cycles = existing.get("cycles", 1)
+                new_cycles = max(prev_cycles, config.cycle or (prev_cycles + 1))
+
+                prev_summary = existing.get("summary", {})
+                all_mins = [v for v in [prev_summary.get("min_latency"), trace_summary.get("min_latency")] if v is not None]
+
+                existing["cycles"] = new_cycles
+                existing["hops"] = hops
+                existing["completed_at"] = datetime.now(timezone.utc).isoformat()
+                existing["summary"] = {
+                    "total_hops": len(hops),
+                    "min_latency": min(all_mins) if all_mins else trace_summary.get("min_latency"),
+                    "target_latency": trace_summary.get("target_latency"),
+                    "cycles": new_cycles,
+                }
+                history[existing_idx] = existing
+            else:
+                entry = {
+                    "id": record_id,
+                    "type": "trace",
+                    "task_id": config.task_id,
+                    "cycles": config.cycle or 1,
+                    "config": config.model_dump(),
+                    "command": " ".join(cmd),
+                    "hops": hops,
+                    "summary": {
+                        **trace_summary,
+                        "cycles": config.cycle or 1,
+                    },
+                    "started_at": active_traces[trace_id]["started_at"],
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                history.insert(0, entry)
+
             save_history(history[:100])
         except Exception:
             pass

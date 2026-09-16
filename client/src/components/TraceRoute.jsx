@@ -78,6 +78,7 @@ export default function TraceRoute({ initialHost = '' }) {
   const isStoppingRef = useRef(false)
   const timerRef = useRef(null)
   const activeTraceIdRef = useRef(null)
+  const taskIdRef = useRef(null)
 
   useEffect(() => {
     if (initialHost && !host) {
@@ -134,7 +135,14 @@ export default function TraceRoute({ initialHost = '' }) {
       fetch('/api/trace/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host: host.trim(), max_hops: Number(maxHops), probes: Number(probes), protocol }),
+        body: JSON.stringify({
+          host: host.trim(),
+          max_hops: Number(maxHops),
+          probes: Number(probes),
+          protocol,
+          task_id: taskIdRef.current,
+          cycle: cycleNum,
+        }),
       })
       .then(async res => {
         if (!res.ok) {
@@ -218,6 +226,9 @@ export default function TraceRoute({ initialHost = '' }) {
       addLog('Target host or IP address is required', 'error')
       return
     }
+
+    const currentTaskId = 'trace_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)
+    taskIdRef.current = currentTaskId
 
     isStoppingRef.current = false
     setStatus('running')
@@ -441,11 +452,23 @@ export default function TraceRoute({ initialHost = '' }) {
                 </button>
               ) : (
                 <button
+                  type="button"
                   className="btn btn-danger btn-full"
                   onClick={stopTrace}
-                  style={{ background: '#ef4444', borderColor: '#dc2626' }}
+                  style={{
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    borderColor: '#b91c1c',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    boxShadow: '0 4px 14px rgba(220, 38, 38, 0.4)',
+                  }}
                 >
-                  ■ Stop Route Trace {loopEnabled && `(Cycle ${currentCycle})`}
+                  <span style={{ color: '#ffffff', fontWeight: 700 }}>■ Stop Route Trace {loopEnabled && `(Cycle ${currentCycle})`}</span>
                 </button>
               )}
             </div>
@@ -473,32 +496,45 @@ export default function TraceRoute({ initialHost = '' }) {
 
         {/* ── Right Column: Visual Results ── */}
         <div className="results-panel">
-          {/* Summary Cards */}
+          {/* Summary Cards: Arranged neatly in a single compact row */}
           {hops.length > 0 && (
-            <div className="summary-cards">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: loopEnabled ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)',
+              gap: 10,
+              marginBottom: 16,
+            }}>
               {loopEnabled && (
-                <div className="summary-card" style={{ borderColor: isWaitingNextCycle ? 'var(--yellow)' : 'var(--border)' }}>
-                  <div className="summary-label">
+                <div className="summary-card" style={{
+                  padding: '10px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  borderColor: isWaitingNextCycle ? 'var(--yellow)' : 'var(--border)',
+                }}>
+                  <div className="summary-label" style={{ fontSize: 10, marginBottom: 4, letterSpacing: '0.04em' }}>
                     {isWaitingNextCycle ? '⏳ Next Cycle' : '🔁 Loop Status'}
                   </div>
-                  <div className="summary-value cyan" style={{ fontSize: isWaitingNextCycle ? '15px' : '18px' }}>
+                  <div className="summary-value cyan" style={{ fontSize: isWaitingNextCycle ? '13px' : '17px', marginBottom: 0 }}>
                     {isWaitingNextCycle ? `In ${countdown}s...` : `Cycle ${currentCycle} (∞)`}
                   </div>
                 </div>
               )}
-              <div className="summary-card">
-                <div className="summary-label">Total Hops</div>
-                <div className="summary-value cyan">{hops.length}</div>
+              <div className="summary-card" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="summary-label" style={{ fontSize: 10, marginBottom: 4, letterSpacing: '0.04em' }}>Total Hops</div>
+                <div className="summary-value cyan" style={{ fontSize: 18, marginBottom: 0 }}>{hops.length}</div>
               </div>
-              <div className="summary-card">
-                <div className="summary-label">Min Latency</div>
-                <div className="summary-value green">{minRtt} <span style={{ fontSize: '14px', fontWeight: 500, opacity: 0.7 }}>ms</span></div>
+              <div className="summary-card" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="summary-label" style={{ fontSize: 10, marginBottom: 4, letterSpacing: '0.04em' }}>Min Latency</div>
+                <div className="summary-value green" style={{ fontSize: 18, marginBottom: 0 }}>
+                  {minRtt} <span style={{ fontSize: '11px', fontWeight: 500, opacity: 0.7 }}>ms</span>
+                </div>
               </div>
-              <div className="summary-card">
-                <div className="summary-label">Target Latency</div>
-                <div className="summary-value yellow">
+              <div className="summary-card" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div className="summary-label" style={{ fontSize: 10, marginBottom: 4, letterSpacing: '0.04em' }}>Target Latency</div>
+                <div className="summary-value yellow" style={{ fontSize: 18, marginBottom: 0 }}>
                   {successfulHops.length > 0 ? successfulHops[successfulHops.length - 1].avg_rtt : 'N/A'}{' '}
-                  <span style={{ fontSize: '14px', fontWeight: 500, opacity: 0.7 }}>ms</span>
+                  <span style={{ fontSize: '11px', fontWeight: 500, opacity: 0.7 }}>ms</span>
                 </div>
               </div>
             </div>

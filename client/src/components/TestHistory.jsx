@@ -95,6 +95,11 @@ export default function TestHistory() {
                       {cfg.host}{cfg.port ? `:${cfg.port}` : ''}
                     </span>
                     <span className="history-date">{fmtDate(entry.started_at)}</span>
+                    {isTrace && (entry.cycles > 1 || entry.summary?.cycles > 1) && (
+                      <span style={{ fontSize: 10, color: '#10b981', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 7px', borderRadius: 4, fontWeight: 700 }}>
+                        🔁 {entry.cycles || entry.summary?.cycles} CYCLES
+                      </span>
+                    )}
                     {!isTrace && cfg.reverse && (
                       <span style={{ fontSize: 10, color: 'var(--yellow)', background: 'var(--yellow-dim)', padding: '1px 6px', borderRadius: 4 }}>
                         ↓ REV
@@ -116,13 +121,25 @@ export default function TestHistory() {
                     {isTrace ? (
                       entry.summary && (
                         <>
+                          {(entry.cycles > 1 || entry.summary.cycles > 1) && (
+                            <div className="stat">
+                              <div className="stat-label">Loops</div>
+                              <div className="stat-value cyan" style={{ fontWeight: 700 }}>{entry.cycles || entry.summary.cycles}</div>
+                            </div>
+                          )}
                           <div className="stat">
                             <div className="stat-label">Hops</div>
                             <div className="stat-value cyan">{entry.summary.total_hops}</div>
                           </div>
                           <div className="stat">
-                            <div className="stat-label">Target Latency</div>
+                            <div className="stat-label">Min Latency</div>
                             <div className="stat-value green">
+                              {entry.summary.min_latency !== null && entry.summary.min_latency !== undefined ? `${entry.summary.min_latency} ms` : 'N/A'}
+                            </div>
+                          </div>
+                          <div className="stat">
+                            <div className="stat-label">Target Latency</div>
+                            <div className="stat-value yellow">
                               {entry.summary.target_latency !== null ? `${entry.summary.target_latency} ms` : 'N/A'}
                             </div>
                           </div>

@@ -230,9 +230,11 @@
 
 ## 📦 Portable Mode (สำหรับ Windows Client)
 
-หากต้องการนำไปใช้งานทดสอบความเร็วในหน้างานแบบ Standalone โดยไม่ต้องติดตั้ง Docker:
-- สามารถรันโปรแกรมผ่าน `portable/app.py` หรือไฟล์คอมไพล์สำหรับ Windows
-- ในโหมดนี้โปรแกรมจะปรับหน้าตาเป็น **iPerf3 Portable Client** ที่มีเฉพาะเครื่องมือ Client Mode และ Test History เพื่อความกะทัดรัดและรวดเร็ว
+หากต้องการนำไปใช้งานทดสอบความเร็วในหน้างานแบบ Standalone โดยไม่ต้องติดตั้ง Docker หรือ Python:
+- **ดาวน์โหลดได้ทันทีจาก GitHub Releases**:
+  - 📥 [**iperf3-portable-client.exe (v1.0.0)**](https://github.com/pirateszero92/iperf3-app/releases/download/v1.0.0/iperf3-portable-client.exe) — ไฟล์โปรแกรมเดี่ยว รันใช้งานได้ทันที (Single Executable)
+  - 📦 [**iperf3-portable-client-v1.0.0-windows-x64.zip**](https://github.com/pirateszero92/iperf3-app/releases/download/v1.0.0/iperf3-portable-client-v1.0.0-windows-x64.zip) — ไฟล์บีบอัด Zip Archive
+- ในโหมดนี้โปรแกรมจะปรับหน้าตาเป็น **iPerf3 Portable Client** ที่มีเฉพาะเครื่องมือ Client Mode และ Test History เพื่อความกะทัดรัด น้ำหนักเบา และเปิดเบราว์เซอร์ให้อัตโนมัติทันทีที่ดับเบิลคลิก
 
 ---
 

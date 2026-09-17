@@ -7,8 +7,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('dist', 'dist'),  # Include Frontend assets
-        ('bin', 'bin'),    # Include iperf3.exe + Cygwin DLL
+        ('../client/dist', 'dist'),  # Include Frontend assets from client/dist
+        ('bin', 'bin'),              # Include iperf3.exe + Cygwin DLL
     ],
     hiddenimports=[
         'uvicorn.logging',

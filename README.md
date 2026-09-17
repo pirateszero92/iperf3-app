@@ -13,13 +13,15 @@
 - [✨ จุดเด่นและฟีเจอร์หลัก (Key Features)](#-จุดเด่นและฟีเจอร์หลัก-key-features)
   - [1. ⚡ Client Mode (iPerf3 Bandwidth Tester)](#1--client-mode-iperf3-bandwidth-tester)
   - [2. 📍 Route Trace & Loop Monitoring](#2--route-trace--loop-monitoring)
-  - [3. 🔍 Nmap Network Scanner (Zenmap-style GUI)](#3--nmap-network-scanner-zenmap-style-gui)
-  - [4. 🌐 IP Address Management (IPAM) & VLAN Pool](#4--ip-address-management-ipam--vlan-pool)
-  - [5. 🧮 IP & VLSM Calculator](#5--ip--vlsm-calculator)
-  - [6. 🔎 DNS & WHOIS Intelligence Suite](#6--dns--whois-intelligence-suite)
-  - [7. 🖥️ Server Mode (iPerf3 Server Daemon)](#7-️-server-mode-iperf3-server-daemon)
-  - [8. 📊 Test History & Data Export](#8--test-history--data-export)
-  - [9. 🛡️ Remote Access Portal (Web Guacamole)](#9-️-remote-access-portal-web-guacamole)
+  - [3. 📡 Traffic & Packet Analyzer (Loop/Storm & PCAP)](#3--traffic--packet-analyzer-loopstorm-detection--wireshark-pcap)
+  - [4. 🔍 Nmap Network Scanner & Security Audit](#4--nmap-network-scanner--security-audit)
+  - [5. 🔐 SSL / TLS Certificate Analyzer](#5--ssl--tls-certificate-analyzer)
+  - [6. 🌐 IP Address Management (IPAM) & VLAN Pool](#6--ip-address-management-ipam--vlan-pool)
+  - [7. 🧮 IP & VLSM Calculator](#7--ip--vlsm-calculator)
+  - [8. 🔎 DNS & WHOIS Intelligence Suite](#8--dns--whois-intelligence-suite)
+  - [9. 🖥️ Server Mode (iPerf3 Server Daemon)](#9-️-server-mode-iperf3-server-daemon)
+  - [10. 📊 Test History & Data Export](#10--test-history--data-export)
+  - [11. 🛡️ Remote Access Portal (Web Guacamole)](#11-️-remote-access-portal-web-guacamole)
 - [🏗️ สถาปัตยกรรมระบบ (Architecture)](#️-สถาปัตยกรรมระบบ-architecture)
 - [🚀 วิธีการติดตั้งและเริ่มใช้งาน (Quick Start)](#-วิธีการติดตั้งและเริ่มใช้งาน-quick-start)
   - [ข้อกำหนดเบื้องต้น (Prerequisites)](#ข้อกำหนดเบื้องต้น-prerequisites)
@@ -43,15 +45,41 @@
 - **Traceroute แบบกราฟิก**: สแกนเส้นทางเครือข่ายเพื่อตรวจสอบ Hop, IP Router, Round-trip Time (RTT), และ Loss
 - **Continuous Loop Trace**: ตรวจสอบ Latency และความเสถียรของเส้นทางปลายทางแบบต่อเนื่อง โดยบันทึกประวัติการทดสอบเป็น Task เดียว ไม่ทำให้ Log แตกย่อย
 
-### 3. 🔍 Nmap Network Scanner (Zenmap-style GUI)
-- **11 Scan Profiles สำเร็จรูป**: เช่น Quick scan, Quick scan plus, Intense scan, All TCP ports (1-65535), Ping scan, Vulnerability scan ฯลฯ
-- **Command Bar แบบ Zenmap**: สามารถพิมพ์แก้ไข Flag คำสั่ง Nmap เพิ่มเติมได้ตามต้องการ
-- **Live Terminal Stream**: หน้าต่าง Terminal แสดงผลการรันคำสั่งแบบ Real-time พร้อมปุ่มคัดลอก (Copy Output)
-- **สรุปผลลัพธ์อัตโนมัติ**:
-  - **Host Details**: แสดงสถานะ Up/Down, Latency, MAC Address, Hardware Vendor, และ OS Detection
-  - **Discovered Ports Table**: ตารางระบุ Port, Protocol, State (Open, Filtered, Closed), Service, และ Software Version
+### 3. 📡 Traffic & Packet Analyzer (Loop/Storm Detection & Wireshark PCAP)
+- **Loop & Storm Monitor (Real-time)**:
+  - เชื่อมต่อสตรีมทราฟฟิกจาก Windows Host ผ่านพอร์ต `9999` (ด้วยคำสั่ง Tshark ในตัว) หรือกดเปิด **Docker Sniffer** ภายในระบบ
+  - ตรวจจับ **Network Loop** อัตโนมัติ (Sliding-window ตรวจจับแพ็กเก็ตที่วนซ้ำภายใน 500ms)
+  - ตรวจจับ **Broadcast / Multicast Storm** (>100 PPS) พร้อมแจ้งเตือนทันที (Alerts Feed)
+  - กราฟแท่งแสดงกิจกรรมแพ็กเก็ตแบบสดๆ แยกสีระหว่างทราฟฟิกปกติและ Broadcast สูง
+- **App Performance & Top Talkers**:
+  - แสดงค่าเฉลี่ย RTT Latency และอัตราการส่งข้อมูลซ้ำ (TCP Retransmission Rate)
+  - จัดอันดับ **Top Talkers** (ไอพีที่ใช้แบนด์วิดท์สูงสุด) พร้อมสเกลเปอร์เซ็นต์
+- **On-Demand Packet Capture (tcpdump)**:
+  - สั่งดักจับแพ็กเก็ตชั่วคราวบนอินเทอร์เฟซ (`eth0`, `any`, `lo`)
+  - กำหนด BPF Filter ได้สะดวก (เช่น `port 5201`, `icmp`, `port 80 or 443`)
+  - กำหนดระยะเวลา (เช่น 30 วินาที) หรือจำนวนแพ็กเก็ตสูงสุด
+  - ปุ่ม **📥 Download .pcap** สำหรับดาวน์โหลดไฟล์ไปเปิดวิเคราะห์ปัญหาใน **Wireshark** ได้ทันที
 
-### 4. 🌐 IP Address Management (IPAM) & VLAN Pool
+### 4. 🔍 Nmap Network Scanner & Security Audit
+- **Scan Profiles ครอบคลุม**:
+  - โหมดมาตรฐาน: Quick scan, Intense scan, All TCP ports (1-65535), Ping scan
+  - โหมดความปลอดภัย (Security Audit):
+    - 🛡️ **Vulnerability scan** (`nmap -sV --script vuln`)
+    - 🔐 **SSL/TLS Ciphers & Cert** (`nmap -sV --script ssl-cert,ssl-enum-ciphers -p 443`)
+    - 🏷️ **Service Banner Grab** (`nmap -sV --script banner`)
+    - 🌐 **HTTP Security Headers** (`nmap -p 80,443 --script http-security-headers,http-methods`)
+- **Live Terminal Stream**: แสดง Console Log แบบสดๆ พร้อมปุ่มคัดลอก
+- **ตารางสรุปผลลัพธ์**: รายการ Port, Protocol, State, Service, Version และ Host Details
+
+### 5. 🔐 SSL / TLS Certificate Analyzer
+- ตรวจสอบใบรับรอง HTTPS / TLS ของ Domain หรือ IP ได้อย่างแม่นยำ
+- **Expiration Countdown**: นับถอยหลังจำนวนวันก่อนใบรับรองหมดอายุ พร้อม Badge สีเขียว/เหลือง/แดง
+- **Security Assessment**: ตรวจสอบสถานะความน่าเชื่อถือ (Trusted Root CA vs Self-Signed/Untrusted)
+- **Handshake & Cipher Details**: ระบุ TLS Version ที่เชื่อมต่อ (TLSv1.2, TLSv1.3), ชื่อชุดรหัสลับ (Cipher Suite), ความยาวคีย์ (Bits), และ ALPN Protocol
+- **Certificate Info**: แสดง Common Name (CN), Organization, Issuer (CA), Valid From, Valid Until, Signature Algorithm, Serial Number
+- **SANs Explorer**: ค้นหาและกรองรายการ Subject Alternative Names (SANs) ได้แบบ Real-time
+
+### 6. 🌐 IP Address Management (IPAM) & VLAN Pool
 - **จัดการ Subnets (CIDR)**: เพิ่มและติดตาม Subnet เช่น `192.168.1.0/24`, `10.1.1.0/24` ได้อย่างอิสระ
 - **High-Accuracy Pure ICMP Echo Scan (`fping`)**: ป้องกันปัญหา Firewall / Proxy หลอกสถานะพอร์ต 80/443 ตรวจจับเครื่องที่มีอยู่จริงในระบบได้อย่างแม่นยำ
 - **ตารางแสดงสถานะ IP รายเครื่อง**:
@@ -64,7 +92,7 @@
   - เชื่อมโยง (Assign) VLAN เข้ากับ Subnet แต่ละวง พร้อม Badge แสดงชื่อ VLAN สวยงาม
   - ฟิลเตอร์คัดกรอง Subnet ตาม VLAN ได้ในคลิกเดียว
 
-### 5. 🧮 IP & VLSM Calculator
+### 7. 🧮 IP & VLSM Calculator
 - **Subnet Calculator แบบ Modern UI**:
   - ป้อน IP และเลือก Netmask (/1 ถึง /32)
   - คำนวณ Network Address, Broadcast, Usable Host Range, Subnet Mask, Wildcard Mask, Total & Usable Hosts
@@ -75,7 +103,7 @@
 - **IPv6 Subnet Calculator**:
   - รองรับ IPv6 Prefix (/1 ถึง /128), ขยายรูปเต็ม (Expanded), ย่อรูป (Compressed), ตรวจสอบ Scope (Global Unicast, Link-Local, ULA)
 
-### 6. 🔎 DNS & WHOIS Intelligence Suite
+### 8. 🔎 DNS & WHOIS Intelligence Suite
 - **DNS Analyzer**:
   - รองรับ Record Types: `ALL`, `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, `SOA`
   - สลับ DNS Resolver ได้ตามต้องการ (System Default, Cloudflare `1.1.1.1`, Google `8.8.8.8`, Quad9 `9.9.9.9`, OpenDNS)
@@ -83,18 +111,18 @@
 - **Reverse DNS (PTR)**: ป้อน IP เพื่อค้นหาชื่อ Hostname ย้อนกลับ
 - **WHOIS Domain & IP Lookup**: ตรวจสอบข้อมูลเจ้าของโดเมน, Registrar, Creation/Expiry Date, Name Servers พร้อม Raw Text
 
-### 7. 🖥️ Server Mode (iPerf3 Server Daemon)
+### 9. 🖥️ Server Mode (iPerf3 Server Daemon)
 - เปิด/ปิด iPerf3 Server ภายในเครื่องได้โดยตรงผ่านหน้าเว็บ
 - กำหนด Port (ค่าเริ่มต้น 5201)
 - มีจุดสถานะไฟเขียว/แดง (Live Server Status Dot) แจ้งเตือนสถานะการทำงานแบบ Real-time
 
-### 8. 📊 Test History & Data Export
+### 10. 📊 Test History & Data Export
 - บันทึกประวัติการทดสอบทุกประเภท (iPerf3, Traceroute, Nmap)
 - เปิดดูย้อนหลังได้ครบถ้วน: กราฟ Throughput, ตาราง Hop Latency, ตาราง Port Nmap และ Console Log
 - ปุ่ม **Export to CSV** และ **Export to JSON** สำหรับนำข้อมูลไปทำรายงาน
 - ค้นหาและกรองประวัติการทดสอบตามประเภทและชื่อเป้าหมาย
 
-### 9. 🛡️ Remote Access Portal (Web Guacamole)
+### 11. 🛡️ Remote Access Portal (Web Guacamole)
 - เชื่อมต่อ Remote Desktop (RDP), VNC, หรือ SSH ไปยังเครื่องปลายทางผ่านเบราว์เซอร์โดยตรง ไม่ต้องลงโปรแกรม Client เพิ่มเติม
 
 ---

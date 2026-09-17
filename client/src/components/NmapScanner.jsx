@@ -12,6 +12,10 @@ const PROFILES = [
   { name: 'Regular scan', cmd: 'nmap' },
   { name: 'Slow comprehensive scan', cmd: 'nmap -sS -sU -T4 -A -v -PE -PP -PS80,443 -PA3389 -PU40125 -PY -g 53 --script "default or (discovery and safe)"' },
   { name: 'Vulnerability scan', cmd: 'nmap -sV --script vuln' },
+  { name: 'SSL/TLS Ciphers & Cert', cmd: 'nmap -sV --script ssl-cert,ssl-enum-ciphers -p 443' },
+  { name: 'Service Banner Grab', cmd: 'nmap -sV --script banner' },
+  { name: 'Safe Discovery Audit', cmd: 'nmap -sV --script "default and safe"' },
+  { name: 'HTTP Security Headers', cmd: 'nmap -p 80,443 --script http-security-headers,http-methods' },
 ]
 
 export default function NmapScanner() {

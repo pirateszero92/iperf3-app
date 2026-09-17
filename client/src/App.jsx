@@ -8,6 +8,8 @@ import NmapScanner from './components/NmapScanner'
 import IpManagement from './components/IpManagement'
 import DnsWhois from './components/DnsWhois'
 import IpCalculator from './components/IpCalculator'
+import TrafficAnalyzer from './components/TrafficAnalyzer'
+import SslAnalyzer from './components/SslAnalyzer'
 
 export default function App() {
   const [appMode, setAppMode] = useState('full') // 'full' | 'portable'
@@ -56,7 +58,9 @@ export default function App() {
     : [
         { id: 'client',  label: 'Client Mode',    icon: '⚡' },
         { id: 'trace',   label: 'Route Trace',    icon: '📍' },
+        { id: 'traffic', label: 'Traffic & PCAP', icon: '📡' },
         { id: 'nmap',    label: 'Nmap Scanner',   icon: '🔍' },
+        { id: 'ssl',     label: 'SSL Analyzer',   icon: '🔐' },
         { id: 'ipam',    label: 'IP Management',  icon: '🌐' },
         { id: 'ipcalc',  label: 'IP Calculator',  icon: '🧮' },
         { id: 'dns',     label: 'DNS & WHOIS',    icon: '🔎' },
@@ -117,8 +121,14 @@ export default function App() {
           {!isPortable && activeTab === 'trace' && (
             <TraceRoute initialHost={traceHost} />
           )}
+          {!isPortable && activeTab === 'traffic' && (
+            <TrafficAnalyzer />
+          )}
           {!isPortable && activeTab === 'nmap' && (
             <NmapScanner />
+          )}
+          {!isPortable && activeTab === 'ssl' && (
+            <SslAnalyzer />
           )}
           {!isPortable && activeTab === 'ipam' && (
             <IpManagement />

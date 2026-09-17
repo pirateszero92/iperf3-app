@@ -7,9 +7,12 @@ import shlex
 import socket
 import time
 import uuid
+import ssl
+import threading
+from collections import deque, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Union, List
+from typing import Optional, Union, List, Dict, Any
 
 try:
     import dns.resolver
@@ -20,6 +23,7 @@ except ImportError:
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="iPerf3 Web GUI API", version="1.0.0")
@@ -706,6 +710,10 @@ NMAP_PROFILES = {
     "Regular scan": "nmap",
     "Slow comprehensive scan": 'nmap -sS -sU -T4 -A -v -PE -PP -PS80,443 -PA3389 -PU40125 -PY -g 53 --script "default or (discovery and safe)"',
     "Vulnerability scan": "nmap -sV --script vuln",
+    "SSL/TLS Ciphers & Cert": "nmap -sV --script ssl-cert,ssl-enum-ciphers -p 443",
+    "Service Banner Grab": "nmap -sV --script banner",
+    "Safe Discovery Audit": 'nmap -sV --script "default and safe"',
+    "HTTP Security Headers": "nmap -p 80,443 --script http-security-headers,http-methods",
 }
 
 @app.get("/api/nmap/profiles")
@@ -1675,5 +1683,704 @@ async def split_subnet(req: SubnetSplitRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# SSL/TLS Certificate Analyzer
+# ---------------------------------------------------------------------------
+
+class SslInspectRequest(BaseModel):
+    host: str
+    port: Optional[int] = 443
+    timeout: Optional[float] = 6.0
+
+def _parse_x509_cert(der_bytes: bytes) -> dict:
+    """Parse DER-encoded certificate using cryptography or fallback."""
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.x509.oid import NameOID, ExtensionOID
+
+        cert = x509.load_der_x509_certificate(der_bytes, default_backend())
+
+        def get_name(name):
+            try:
+                cn = name.get_attributes_for_oid(NameOID.COMMON_NAME)
+                org = name.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+                c = name.get_attributes_for_oid(NameOID.COUNTRY_NAME)
+                parts = []
+                if cn: parts.append(cn[0].value)
+                if org: parts.append(f"({org[0].value})")
+                if c: parts.append(f"[{c[0].value}]")
+                return " ".join(parts) if parts else str(name)
+            except Exception:
+                return str(name)
+
+        subject = get_name(cert.subject)
+        issuer = get_name(cert.issuer)
+
+        # Subject Alternative Names (SANs)
+        sans = []
+        try:
+            san_ext = cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+            for name in san_ext.value:
+                sans.append(str(name.value))
+        except Exception:
+            pass
+
+        # Dates
+        not_before = cert.not_valid_before_utc if hasattr(cert, 'not_valid_before_utc') else cert.not_valid_before.replace(tzinfo=timezone.utc)
+        not_after = cert.not_valid_after_utc if hasattr(cert, 'not_valid_after_utc') else cert.not_valid_after.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        days_remaining = (not_after - now).days
+        is_expired = now > not_after
+
+        # Key & Signature info
+        sig_algo = cert.signature_algorithm_oid._name if hasattr(cert, 'signature_algorithm_oid') else "unknown"
+        serial_hex = f"{cert.serial_number:X}"
+
+        return {
+            "subject": subject,
+            "issuer": issuer,
+            "sans": sans[:50],
+            "valid_from": not_before.isoformat(),
+            "valid_until": not_after.isoformat(),
+            "days_remaining": days_remaining,
+            "is_expired": is_expired,
+            "signature_algorithm": sig_algo,
+            "serial_number": serial_hex,
+        }
+    except Exception as e:
+        return {"error": f"Failed to parse X.509 cert: {e}"}
+
+@app.post("/api/ssl/inspect")
+def inspect_ssl_certificate(req: SslInspectRequest):
+    raw_host = req.host.strip()
+    if not raw_host:
+        raise HTTPException(status_code=400, detail="Host cannot be empty")
+
+    port = req.port or 443
+    if ":" in raw_host and not raw_host.startswith("["):
+        parts = raw_host.rsplit(":", 1)
+        raw_host = parts[0]
+        try:
+            port = int(parts[1])
+        except ValueError:
+            pass
+
+    # Remove protocol prefix if user typed https://
+    if "://" in raw_host:
+        raw_host = raw_host.split("://", 1)[1]
+    if "/" in raw_host:
+        raw_host = raw_host.split("/", 1)[0]
+
+    sni_hostname = raw_host
+    # Check if IP address
+    try:
+        ipaddress.ip_address(raw_host)
+        # IP addresses usually don't use SNI unless specified
+    except ValueError:
+        pass
+
+    timeout = min(req.timeout or 6.0, 15.0)
+
+    # Attempt 1: Verified SSL Context
+    verified = True
+    verify_error = None
+    der_cert = None
+    tls_version = None
+    cipher_info = None
+    alpn_proto = None
+
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        with socket.create_connection((raw_host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=sni_hostname) as ssock:
+                der_cert = ssock.getpeercert(binary_form=True)
+                tls_version = ssock.version()
+                cipher_info = ssock.cipher()
+                alpn_proto = ssock.selected_alpn_protocol()
+    except ssl.SSLCertVerificationError as e:
+        verified = False
+        verify_error = f"Certificate Verification Failed: {e.verify_message}"
+    except Exception as e:
+        verified = False
+        verify_error = str(e)
+
+    # Attempt 2: If verification failed, reconnect with unverified context to still parse certificate
+    if not der_cert:
+        try:
+            unverified_ctx = ssl._create_unverified_context()
+            unverified_ctx.check_hostname = False
+            unverified_ctx.verify_mode = ssl.CERT_NONE
+            with socket.create_connection((raw_host, port), timeout=timeout) as sock:
+                with unverified_ctx.wrap_socket(sock, server_hostname=sni_hostname) as ssock:
+                    der_cert = ssock.getpeercert(binary_form=True)
+                    tls_version = ssock.version()
+                    cipher_info = ssock.cipher()
+                    alpn_proto = ssock.selected_alpn_protocol()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"SSL Handshake failed for {raw_host}:{port} - {e}")
+
+    parsed = _parse_x509_cert(der_cert) if der_cert else {}
+
+    days = parsed.get("days_remaining", 0)
+    is_exp = parsed.get("is_expired", False)
+    if is_exp:
+        status = "expired"
+        badge_color = "red"
+    elif days <= 15:
+        status = "critical_expiry"
+        badge_color = "red"
+    elif days <= 30:
+        status = "expiring_soon"
+        badge_color = "amber"
+    else:
+        status = "valid"
+        badge_color = "green"
+
+    return {
+        "host": raw_host,
+        "port": port,
+        "verified": verified,
+        "verify_error": verify_error,
+        "status": status,
+        "badge_color": badge_color,
+        "tls_version": tls_version or "Unknown",
+        "cipher": {
+            "name": cipher_info[0] if cipher_info else "-",
+            "version": cipher_info[1] if cipher_info else "-",
+            "bits": cipher_info[2] if cipher_info else 0,
+        },
+        "alpn": alpn_proto or "-",
+        "certificate": parsed,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Packet Capture & PCAP Export (tcpdump)
+# ---------------------------------------------------------------------------
+
+CAPTURES_DIR = DATA_DIR / "captures"
+CAPTURES_DIR.mkdir(exist_ok=True)
+
+active_captures: dict[str, dict] = {}
+
+class CaptureStartRequest(BaseModel):
+    interface: Optional[str] = "eth0"
+    filter: Optional[str] = ""
+    duration: Optional[int] = 30
+    max_packets: Optional[int] = 2000
+
+@app.get("/api/capture/interfaces")
+def get_capture_interfaces():
+    interfaces = []
+    # Try reading /sys/class/net
+    sys_net = Path("/sys/class/net")
+    if sys_net.exists():
+        for item in sys_net.iterdir():
+            if item.is_dir() or item.is_symlink():
+                operstate = "unknown"
+                state_file = item / "operstate"
+                if state_file.exists():
+                    try:
+                        operstate = state_file.read_text().strip()
+                    except Exception:
+                        pass
+                interfaces.append({
+                    "name": item.name,
+                    "status": operstate,
+                    "is_loopback": item.name == "lo",
+                })
+    if not interfaces:
+        interfaces = [
+            {"name": "eth0", "status": "up", "is_loopback": False},
+            {"name": "any", "status": "pseudo", "is_loopback": False},
+            {"name": "lo", "status": "up", "is_loopback": True},
+        ]
+    # Add 'any' pseudo interface if not present
+    if not any(i["name"] == "any" for i in interfaces):
+        interfaces.append({"name": "any", "status": "pseudo", "is_loopback": False})
+    return interfaces
+
+@app.post("/api/capture/start")
+async def start_packet_capture(req: CaptureStartRequest):
+    # Stop any already running capture
+    for cap_id, cap_data in list(active_captures.items()):
+        if cap_data.get("status") == "running":
+            proc = cap_data.get("proc")
+            if proc and proc.returncode is None:
+                try: proc.terminate()
+                except Exception: pass
+            cap_data["status"] = "stopped"
+
+    capture_id = str(uuid.uuid4())
+    pcap_path = CAPTURES_DIR / f"capture_{capture_id[:8]}_{int(time.time())}.pcap"
+    
+    iface = req.interface or "eth0"
+    duration = max(5, min(req.duration or 30, 300))  # 5s to 5 mins
+    max_pkts = max(10, min(req.max_packets or 2000, 50000))
+    bpf_filter = (req.filter or "").strip()
+
+    cmd = ["tcpdump", "-i", iface, "-w", str(pcap_path), "-c", str(max_pkts), "-U"]
+    if bpf_filter:
+        cmd.extend(shlex.split(bpf_filter))
+
+    raw_command = " ".join(cmd)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to execute tcpdump: {e}")
+
+    cap_record = {
+        "id": capture_id,
+        "status": "running",
+        "interface": iface,
+        "filter": bpf_filter,
+        "duration": duration,
+        "max_packets": max_pkts,
+        "file_path": str(pcap_path),
+        "filename": pcap_path.name,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "command": raw_command,
+        "proc": proc,
+    }
+    active_captures[capture_id] = cap_record
+
+    # Background auto-stop task after duration
+    async def _auto_stop():
+        await asyncio.sleep(duration)
+        if capture_id in active_captures and active_captures[capture_id]["status"] == "running":
+            if proc.returncode is None:
+                try: proc.terminate()
+                except Exception: pass
+            active_captures[capture_id]["status"] = "completed"
+
+    asyncio.create_task(_auto_stop())
+
+    return {
+        "capture_id": capture_id,
+        "filename": pcap_path.name,
+        "command": raw_command,
+        "status": "running",
+        "duration": duration,
+    }
+
+@app.post("/api/capture/stop")
+async def stop_packet_capture():
+    stopped_id = None
+    for cap_id, cap_data in active_captures.items():
+        if cap_data.get("status") == "running":
+            proc = cap_data.get("proc")
+            if proc and proc.returncode is None:
+                try: proc.terminate()
+                except Exception: pass
+            cap_data["status"] = "stopped"
+            stopped_id = cap_id
+    if not stopped_id:
+        return {"status": "no_active_capture"}
+    return {"status": "stopped", "capture_id": stopped_id}
+
+@app.get("/api/capture/status")
+def get_capture_status():
+    running_cap = None
+    for cap_id, cap_data in active_captures.items():
+        if cap_data.get("status") == "running":
+            proc = cap_data.get("proc")
+            if proc and proc.returncode is not None:
+                cap_data["status"] = "completed"
+            else:
+                running_cap = cap_data
+                break
+
+    if not running_cap:
+        return {"active": False}
+
+    file_size = 0
+    fpath = Path(running_cap["file_path"])
+    if fpath.exists():
+        file_size = fpath.stat().st_size
+
+    return {
+        "active": True,
+        "capture_id": running_cap["id"],
+        "interface": running_cap["interface"],
+        "filter": running_cap["filter"],
+        "started_at": running_cap["started_at"],
+        "duration": running_cap["duration"],
+        "file_size": file_size,
+        "filename": running_cap["filename"],
+    }
+
+@app.get("/api/capture/history")
+def get_capture_history():
+    files = []
+    if CAPTURES_DIR.exists():
+        for p in CAPTURES_DIR.glob("*.pcap"):
+            stat = p.stat()
+            files.append({
+                "id": p.stem,
+                "filename": p.name,
+                "size_bytes": stat.st_size,
+                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            })
+    files.sort(key=lambda x: x["created_at"], reverse=True)
+    return files[:30]
+
+@app.delete("/api/capture/{filename}")
+def delete_capture_file(filename: str):
+    p = CAPTURES_DIR / filename
+    if p.exists() and p.name.endswith(".pcap"):
+        try:
+            p.unlink()
+            return {"status": "deleted"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    raise HTTPException(status_code=404, detail="Capture file not found")
+
+@app.get("/api/capture/download/{filename}")
+def download_capture_file(filename: str):
+    p = CAPTURES_DIR / filename
+    if not p.exists() or not p.name.endswith(".pcap"):
+        raise HTTPException(status_code=404, detail="Capture file not found")
+    return FileResponse(
+        path=str(p),
+        filename=filename,
+        media_type="application/vnd.tcpdump.pcap"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Real-Time Traffic & Loop/Storm Analyzer (Ingestion + WebSocket)
+# ---------------------------------------------------------------------------
+
+ALERTS_FILE = DATA_DIR / "alerts.json"
+
+def load_alerts() -> list:
+    if ALERTS_FILE.exists():
+        try:
+            return json.loads(ALERTS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+    return []
+
+def save_alerts(alerts: list):
+    try:
+        ALERTS_FILE.write_text(json.dumps(alerts[:200], ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+class TrafficTelemetryEngine:
+    """In-Memory Packet Analyzer for Loop Detection, Storm Alerting, and Top Talkers."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        # Sliding window for loop detection: (ip_src, ip_dst, ip_id, ip_proto, tcp_seq) -> list of timestamps
+        self.recent_signatures = {}
+        # Sliding window for storm detection: src_key -> deque of timestamps
+        self.packet_timestamps = defaultdict(deque)
+        # Cooldown for alerts: key -> timestamp
+        self.alert_cooldown = {}
+        # Counters for current 1-second window
+        self.current_bytes = 0
+        self.current_packets = 0
+        self.current_broadcast = 0
+        self.current_multicast = 0
+        self.talkers_bytes = defaultdict(int)
+        self.rtt_samples = []
+        self.retransmissions = 0
+        # In-memory recent alerts buffer
+        self.alerts = load_alerts()
+        # Internal capture subprocess
+        self.internal_proc = None
+        self.internal_active = False
+
+    def ingest_packet(self, data: dict):
+        now = time.time()
+        with self.lock:
+            length = int(data.get("length") or data.get("frame_len") or 64)
+            self.current_bytes += length
+            self.current_packets += 1
+
+            ip_src = data.get("ip_src") or data.get("src_ip") or ""
+            ip_dst = data.get("ip_dst") or data.get("dst_ip") or ""
+            eth_dst = data.get("eth_dst") or ""
+
+            if ip_src:
+                self.talkers_bytes[ip_src] += length
+
+            is_bcast = False
+            is_mcast = False
+            if eth_dst.lower() == "ff:ff:ff:ff:ff:ff" or ip_dst.endswith(".255") or ip_dst == "255.255.255.255":
+                self.current_broadcast += 1
+                is_bcast = True
+            elif eth_dst.lower().startswith("01:00:5e") or eth_dst.lower().startswith("33:33") or (ip_dst and ip_dst.startswith("224.") or ip_dst.startswith("239.")):
+                self.current_multicast += 1
+                is_mcast = True
+
+            # RTT & Retransmission metrics
+            rtt = data.get("rtt") or data.get("tcp_rtt")
+            if rtt is not None:
+                try: self.rtt_samples.append(float(rtt) * 1000) # convert to ms
+                except Exception: pass
+            if data.get("retransmission") or data.get("tcp_retransmit"):
+                self.retransmissions += 1
+
+            # 1. Loop Detection (duplicate packet signature within 500ms)
+            ip_id = data.get("ip_id")
+            ip_proto = data.get("ip_proto")
+            tcp_seq = data.get("tcp_seq")
+            if ip_src and ip_dst and ip_id is not None:
+                sig_key = (ip_src, ip_dst, str(ip_id), str(ip_proto), str(tcp_seq or 0))
+                sig_times = self.recent_signatures.get(sig_key, [])
+                # Purge older than 0.5s
+                sig_times = [t for t in sig_times if now - t <= 0.5]
+                sig_times.append(now)
+                self.recent_signatures[sig_key] = sig_times
+
+                if len(sig_times) >= 3:
+                    # Duplicate packet circulating
+                    alert_key = f"loop_{ip_src}_{ip_dst}_{ip_id}"
+                    if now - self.alert_cooldown.get(alert_key, 0) > 4.0:
+                        self.alert_cooldown[alert_key] = now
+                        self._trigger_alert({
+                            "type": "Network Loop Detected",
+                            "severity": "critical",
+                            "message": f"Packet circulating repeatedly between {ip_src} and {ip_dst} (IP ID: {ip_id}, Count: {len(sig_times)})",
+                            "source": ip_src,
+                            "target": ip_dst,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        })
+
+            # 2. Storm Detection (Broadcast / Multicast or single src PPS > 100)
+            src_key = ip_src or data.get("eth_src") or "unknown"
+            q = self.packet_timestamps[src_key]
+            q.append(now)
+            while q and now - q[0] > 1.0:
+                q.popleft()
+
+            if len(q) > 120 and is_bcast:
+                alert_key = f"storm_bcast_{src_key}"
+                if now - self.alert_cooldown.get(alert_key, 0) > 5.0:
+                    self.alert_cooldown[alert_key] = now
+                    self._trigger_alert({
+                        "type": "Broadcast Storm Detected",
+                        "severity": "warning",
+                        "message": f"High broadcast traffic from {src_key} ({len(q)} packets/sec)",
+                        "source": src_key,
+                        "target": "Broadcast",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+            elif len(q) > 200:
+                alert_key = f"storm_unicast_{src_key}"
+                if now - self.alert_cooldown.get(alert_key, 0) > 5.0:
+                    self.alert_cooldown[alert_key] = now
+                    self._trigger_alert({
+                        "type": "Packet Storm / High PPS",
+                        "severity": "warning",
+                        "message": f"Abnormal packet surge from {src_key} ({len(q)} packets/sec)",
+                        "source": src_key,
+                        "target": ip_dst or "Multiple",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+
+    def _trigger_alert(self, alert_entry: dict):
+        alert_entry["id"] = str(uuid.uuid4())[:8]
+        self.alerts.insert(0, alert_entry)
+        self.alerts = self.alerts[:100]
+        save_alerts(self.alerts)
+        # Broadcast alert
+        asyncio.create_task(manager.broadcast("traffic_alerts", {"type": "new_alert", "alert": alert_entry}))
+
+    def flush_metrics_snapshot(self) -> dict:
+        with self.lock:
+            pps = self.current_packets
+            bps = self.current_bytes * 8
+            mbps = round(bps / 1_000_000, 3)
+            kbps = round(bps / 1_000, 1)
+
+            bcast = self.current_broadcast
+            mcast = self.current_multicast
+            ucast = max(0, pps - bcast - mcast)
+
+            # Top Talkers
+            sorted_talkers = sorted(self.talkers_bytes.items(), key=lambda x: x[1], reverse=True)[:6]
+            talkers_list = [{"ip": ip, "bytes": b, "mb": round(b / 1_000_000, 2)} for ip, b in sorted_talkers]
+
+            avg_rtt = round(sum(self.rtt_samples) / len(self.rtt_samples), 2) if self.rtt_samples else 0.0
+            retrans = self.retransmissions
+
+            # Reset window counters
+            self.current_bytes = 0
+            self.current_packets = 0
+            self.current_broadcast = 0
+            self.current_multicast = 0
+            self.rtt_samples = []
+            self.retransmissions = 0
+
+            # Prune old signatures
+            now = time.time()
+            self.recent_signatures = {k: v for k, v in self.recent_signatures.items() if v and now - v[-1] <= 1.0}
+
+            return {
+                "pps": pps,
+                "bps": bps,
+                "kbps": kbps,
+                "mbps": mbps,
+                "broadcast": bcast,
+                "multicast": mcast,
+                "unicast": ucast,
+                "top_talkers": talkers_list,
+                "avg_rtt_ms": avg_rtt,
+                "tcp_retransmissions": retrans,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+traffic_engine = TrafficTelemetryEngine()
+
+# Background TCP Socket Server on 0.0.0.0:9999 for host Tshark streaming
+async def _start_traffic_socket_server():
+    async def handle_client(reader, writer):
+        addr = writer.get_extra_info('peername')
+        try:
+            while True:
+                line_bytes = await reader.readline()
+                if not line_bytes:
+                    break
+                line = line_bytes.decode('utf-8', errors='replace').strip()
+                if not line:
+                    continue
+                # Handle Tshark elasticsearch/json format or key-value
+                try:
+                    if line.startswith("{"):
+                        data = json.loads(line)
+                        layers = data.get("layers", data)
+                        traffic_engine.ingest_packet({
+                            "ip_src": layers.get("ip_src") or layers.get("ip.src", [None])[0] if isinstance(layers.get("ip.src"), list) else layers.get("ip.src"),
+                            "ip_dst": layers.get("ip_dst") or layers.get("ip.dst", [None])[0] if isinstance(layers.get("ip.dst"), list) else layers.get("ip.dst"),
+                            "ip_id": layers.get("ip_id") or layers.get("ip.id", [None])[0] if isinstance(layers.get("ip.id"), list) else layers.get("ip.id"),
+                            "ip_proto": layers.get("ip_proto") or layers.get("ip.proto", [None])[0] if isinstance(layers.get("ip.proto"), list) else layers.get("ip.proto"),
+                            "tcp_seq": layers.get("tcp_seq") or layers.get("tcp.seq", [None])[0] if isinstance(layers.get("tcp.seq"), list) else layers.get("tcp.seq"),
+                            "eth_src": layers.get("eth_src") or layers.get("eth.src", [None])[0] if isinstance(layers.get("eth.src"), list) else layers.get("eth.src"),
+                            "eth_dst": layers.get("eth_dst") or layers.get("eth.dst", [None])[0] if isinstance(layers.get("eth.dst"), list) else layers.get("eth.dst"),
+                            "length": layers.get("frame_len") or layers.get("frame.len", [None])[0] if isinstance(layers.get("frame.len"), list) else layers.get("frame.len") or 64,
+                            "rtt": layers.get("tcp_analysis_initial_rtt") or layers.get("tcp.analysis.initial_rtt", [None])[0] if isinstance(layers.get("tcp.analysis.initial_rtt"), list) else layers.get("tcp.analysis.initial_rtt"),
+                            "retransmission": bool(layers.get("tcp_analysis_retransmission") or layers.get("tcp.analysis.retransmission")),
+                        })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        finally:
+            writer.close()
+            try: await writer.wait_closed()
+            except Exception: pass
+
+    try:
+        server = await asyncio.start_server(handle_client, '0.0.0.0', 9999)
+        async with server:
+            await server.serve_forever()
+    except Exception as e:
+        pass
+
+# Background metrics broadcast task every 1 second
+async def _traffic_metrics_loop():
+    while True:
+        await asyncio.sleep(1.0)
+        try:
+            snapshot = traffic_engine.flush_metrics_snapshot()
+            await manager.broadcast("traffic_metrics", {"type": "metrics", "data": snapshot})
+        except Exception:
+            pass
+
+# Start background workers on startup
+@app.on_event("startup")
+async def startup_traffic_workers():
+    asyncio.create_task(_start_traffic_socket_server())
+    asyncio.create_task(_traffic_metrics_loop())
+
+@app.websocket("/ws/traffic")
+async def traffic_websocket(websocket: WebSocket):
+    await manager.connect("traffic_metrics", websocket)
+    await manager.connect("traffic_alerts", websocket)
+    try:
+        # Send initial snapshot and recent alerts
+        await websocket.send_json({
+            "type": "init",
+            "alerts": traffic_engine.alerts[:50],
+        })
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect("traffic_metrics", websocket)
+        manager.disconnect("traffic_alerts", websocket)
+
+@app.get("/api/traffic/alerts")
+def get_traffic_alerts():
+    return traffic_engine.alerts[:100]
+
+@app.post("/api/traffic/alerts/clear")
+def clear_traffic_alerts():
+    traffic_engine.alerts = []
+    save_alerts([])
+    return {"status": "cleared"}
+
+# Toggle internal container packet sniff (tcpdump piping to engine)
+@app.post("/api/traffic/internal-sniff/toggle")
+async def toggle_internal_sniff():
+    if traffic_engine.internal_active and traffic_engine.internal_proc:
+        try:
+            traffic_engine.internal_proc.terminate()
+        except Exception:
+            pass
+        traffic_engine.internal_active = False
+        traffic_engine.internal_proc = None
+        return {"active": False}
+
+    # Start tcpdump on eth0
+    try:
+        cmd = ["tcpdump", "-i", "any", "-l", "-n", "-tt", "-q"]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        traffic_engine.internal_proc = proc
+        traffic_engine.internal_active = True
+
+        async def _read_tcpdump():
+            regex = re.compile(r"(\d+\.\d+)\s+IP\s+([\d\.]+)(?:\.\d+)?\s+>\s+([\d\.]+)(?:\.\d+)?:")
+            while traffic_engine.internal_active and proc.stdout:
+                line_b = await proc.stdout.readline()
+                if not line_b:
+                    break
+                line = line_b.decode('utf-8', errors='replace').strip()
+                m = regex.search(line)
+                if m:
+                    src = m.group(2)
+                    dst = m.group(3)
+                    traffic_engine.ingest_packet({
+                        "ip_src": src,
+                        "ip_dst": dst,
+                        "ip_id": int(time.time() * 1000) % 65535,
+                        "length": 128,
+                    })
+
+        asyncio.create_task(_read_tcpdump())
+        return {"active": True}
+    except Exception as e:
+        traffic_engine.internal_active = False
+        raise HTTPException(status_code=500, detail=f"Failed to start internal sniffer: {e}")
+
+@app.get("/api/traffic/internal-sniff/status")
+def get_internal_sniff_status():
+    return {"active": traffic_engine.internal_active}
+
 
 

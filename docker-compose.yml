@@ -4,6 +4,7 @@ services:
       context: ./server
     environment:
       - REMOTE_PORT=${REMOTE_PORT:-8088}
+      - SPEEDTEST_PORT=${SPEEDTEST_PORT:-3002}
     ports:
       - "8001:8000"
       - "9999:9999"
@@ -24,6 +25,16 @@ services:
     depends_on:
       - backend
       - remote
+      - speedtest
+    networks:
+      - iperf3-net
+    restart: unless-stopped
+
+  speedtest:
+    image: openspeedtest/latest
+    container_name: iperf3-speedtest
+    ports:
+      - "${SPEEDTEST_PORT:-3002}:3000"
     networks:
       - iperf3-net
     restart: unless-stopped

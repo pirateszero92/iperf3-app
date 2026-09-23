@@ -12,16 +12,17 @@
 ## 📋 สารบัญ (Table of Contents)
 - [✨ จุดเด่นและฟีเจอร์หลัก (Key Features)](#-จุดเด่นและฟีเจอร์หลัก-key-features)
   - [1. ⚡ Client Mode (iPerf3 Bandwidth Tester)](#1--client-mode-iperf3-bandwidth-tester)
-  - [2. 📍 Route Trace & Loop Monitoring](#2--route-trace--loop-monitoring)
-  - [3. 📡 Traffic & Packet Analyzer (Loop/Storm & PCAP)](#3--traffic--packet-analyzer-loopstorm-detection--wireshark-pcap)
-  - [4. 🔍 Nmap Network Scanner & Security Audit](#4--nmap-network-scanner--security-audit)
-  - [5. 🔐 SSL / TLS Certificate Analyzer](#5--ssl--tls-certificate-analyzer)
-  - [6. 🌐 IP Address Management (IPAM) & VLAN Pool](#6--ip-address-management-ipam--vlan-pool)
-  - [7. 🧮 IP & VLSM Calculator](#7--ip--vlsm-calculator)
-  - [8. 🔎 DNS & WHOIS Intelligence Suite](#8--dns--whois-intelligence-suite)
-  - [9. 🖥️ Server Mode (iPerf3 Server Daemon)](#9-️-server-mode-iperf3-server-daemon)
-  - [10. 📊 Test History & Data Export](#10--test-history--data-export)
-  - [11. 🛡️ Remote Access Portal (Web Guacamole)](#11-️-remote-access-portal-web-guacamole)
+  - [2. 🚀 HTML5 SpeedTest (OpenSpeedTest™ Client-less)](#2--html5-speedtest-openspeedtest-client-less)
+  - [3. 📍 Route Trace & Loop Monitoring](#3--route-trace--loop-monitoring)
+  - [4. 📡 Traffic & Packet Analyzer (Loop/Storm & PCAP)](#4--traffic--packet-analyzer-loopstorm-detection--wireshark-pcap)
+  - [5. 🔍 Nmap Network Scanner & Security Audit](#5--nmap-network-scanner--security-audit)
+  - [6. 🔐 SSL / TLS Certificate Analyzer](#6--ssl--tls-certificate-analyzer)
+  - [7. 🌐 IP Address Management (IPAM) & VLAN Pool](#7--ip-address-management-ipam--vlan-pool)
+  - [8. 🧮 IP & VLSM Calculator](#8--ip--vlsm-calculator)
+  - [9. 🔎 DNS & WHOIS Intelligence Suite](#9--dns--whois-intelligence-suite)
+  - [10. 🖥️ Server Mode (iPerf3 Server Daemon)](#10-️-server-mode-iperf3-server-daemon)
+  - [11. 📊 Test History & Data Export](#11--test-history--data-export)
+  - [12. 🛡️ Remote Access Portal (Web Guacamole)](#12-️-remote-access-portal-web-guacamole)
 - [🏗️ สถาปัตยกรรมระบบ (Architecture)](#️-สถาปัตยกรรมระบบ-architecture)
 - [🚀 วิธีการติดตั้งและเริ่มใช้งาน (Quick Start)](#-วิธีการติดตั้งและเริ่มใช้งาน-quick-start)
   - [ข้อกำหนดเบื้องต้น (Prerequisites)](#ข้อกำหนดเบื้องต้น-prerequisites)
@@ -41,11 +42,19 @@
 - **Loop Test Mode**: สั่งทดสอบวนซ้ำต่อเนื่องอัตโนมัติจนกว่าจะกดหยุดเอง พร้อมแสดงสถิติแบบย่อแถวเดียว (Loop Status, Total Hops, Min Latency, Target Latency)
 - **การตั้งค่าระดับสูง**: ปรับจำนวน Parallel Streams, Duration, Interval, MSS (MTU), Window Size, TOS/DSCP ได้อย่างยืดหยุ่น
 
-### 2. 📍 Route Trace & Loop Monitoring
+### 2. 🚀 HTML5 SpeedTest (OpenSpeedTest™ Client-less)
+- **ทดสอบความเร็วโดยไม่ต้องติดตั้งโปรแกรม (No App / Agent Needed)**:
+  - ใช้เทคโนโลยี HTML5 / JavaScript 100% ทดสอบได้จากทุกเบราว์เซอร์ ทั้งคอมพิวเตอร์, แล็ปท็อป, สมาร์ทโฟน (iOS / Android), แท็บเล็ต, หรือ Smart TV
+  - วัดค่า **Download**, **Upload**, **Ping (Latency)**, และ **Jitter** ผ่าน HTTP/HTTPS
+- **เข้าใช้งานได้ 2 รูปแบบ**:
+  - **ผ่าน Web Dashboard**: แท็บ `HTML5 SpeedTest` ฝังแบบ Seamless พร้อมโหมด Fullscreen และ Dark Theme อัตโนมัติ
+  - **Direct LAN & Mobile QR Code**: มีกล่อง Direct URL (พอร์ต `3002`) พร้อม **QR Code** ให้หยิบมือถือมาสแกนเปิดหน้าเทสเพื่อเดินเช็คสัญญาณ Wi-Fi หรือความเร็วสาย LAN ตามจุดต่างๆ ได้ทันที
+
+### 3. 📍 Route Trace & Loop Monitoring
 - **Traceroute แบบกราฟิก**: สแกนเส้นทางเครือข่ายเพื่อตรวจสอบ Hop, IP Router, Round-trip Time (RTT), และ Loss
 - **Continuous Loop Trace**: ตรวจสอบ Latency และความเสถียรของเส้นทางปลายทางแบบต่อเนื่อง โดยบันทึกประวัติการทดสอบเป็น Task เดียว ไม่ทำให้ Log แตกย่อย
 
-### 3. 📡 Traffic & Packet Analyzer (Loop/Storm Detection & Wireshark PCAP)
+### 4. 📡 Traffic & Packet Analyzer (Loop/Storm Detection & Wireshark PCAP)
 - **Loop & Storm Monitor (Real-time)**:
   - เชื่อมต่อสตรีมทราฟฟิกจาก Windows Host ผ่านพอร์ต `9999` (ด้วยคำสั่ง Tshark ในตัว) หรือกดเปิด **Docker Sniffer** ภายในระบบ
   - ตรวจจับ **Network Loop** อัตโนมัติ (Sliding-window ตรวจจับแพ็กเก็ตที่วนซ้ำภายใน 500ms)
@@ -60,7 +69,7 @@
   - กำหนดระยะเวลา (เช่น 30 วินาที) หรือจำนวนแพ็กเก็ตสูงสุด
   - ปุ่ม **📥 Download .pcap** สำหรับดาวน์โหลดไฟล์ไปเปิดวิเคราะห์ปัญหาใน **Wireshark** ได้ทันที
 
-### 4. 🔍 Nmap Network Scanner & Security Audit
+### 5. 🔍 Nmap Network Scanner & Security Audit
 - **Scan Profiles ครอบคลุม**:
   - โหมดมาตรฐาน: Quick scan, Intense scan, All TCP ports (1-65535), Ping scan
   - โหมดความปลอดภัย (Security Audit):
@@ -71,7 +80,7 @@
 - **Live Terminal Stream**: แสดง Console Log แบบสดๆ พร้อมปุ่มคัดลอก
 - **ตารางสรุปผลลัพธ์**: รายการ Port, Protocol, State, Service, Version และ Host Details
 
-### 5. 🔐 SSL / TLS Certificate Analyzer
+### 6. 🔐 SSL / TLS Certificate Analyzer
 - ตรวจสอบใบรับรอง HTTPS / TLS ของ Domain หรือ IP ได้อย่างแม่นยำ
 - **Expiration Countdown**: นับถอยหลังจำนวนวันก่อนใบรับรองหมดอายุ พร้อม Badge สีเขียว/เหลือง/แดง
 - **Security Assessment**: ตรวจสอบสถานะความน่าเชื่อถือ (Trusted Root CA vs Self-Signed/Untrusted)
@@ -79,7 +88,7 @@
 - **Certificate Info**: แสดง Common Name (CN), Organization, Issuer (CA), Valid From, Valid Until, Signature Algorithm, Serial Number
 - **SANs Explorer**: ค้นหาและกรองรายการ Subject Alternative Names (SANs) ได้แบบ Real-time
 
-### 6. 🌐 IP Address Management (IPAM) & VLAN Pool
+### 7. 🌐 IP Address Management (IPAM) & VLAN Pool
 - **จัดการ Subnets (CIDR)**: เพิ่มและติดตาม Subnet เช่น `192.168.1.0/24`, `10.1.1.0/24` ได้อย่างอิสระ
 - **High-Accuracy Pure ICMP Echo Scan (`fping`)**: ป้องกันปัญหา Firewall / Proxy หลอกสถานะพอร์ต 80/443 ตรวจจับเครื่องที่มีอยู่จริงในระบบได้อย่างแม่นยำ
 - **ตารางแสดงสถานะ IP รายเครื่อง**:
@@ -92,7 +101,7 @@
   - เชื่อมโยง (Assign) VLAN เข้ากับ Subnet แต่ละวง พร้อม Badge แสดงชื่อ VLAN สวยงาม
   - ฟิลเตอร์คัดกรอง Subnet ตาม VLAN ได้ในคลิกเดียว
 
-### 7. 🧮 IP & VLSM Calculator
+### 8. 🧮 IP & VLSM Calculator
 - **Subnet Calculator แบบ Modern UI**:
   - ป้อน IP และเลือก Netmask (/1 ถึง /32)
   - คำนวณ Network Address, Broadcast, Usable Host Range, Subnet Mask, Wildcard Mask, Total & Usable Hosts
@@ -103,7 +112,7 @@
 - **IPv6 Subnet Calculator**:
   - รองรับ IPv6 Prefix (/1 ถึง /128), ขยายรูปเต็ม (Expanded), ย่อรูป (Compressed), ตรวจสอบ Scope (Global Unicast, Link-Local, ULA)
 
-### 8. 🔎 DNS & WHOIS Intelligence Suite
+### 9. 🔎 DNS & WHOIS Intelligence Suite
 - **DNS Analyzer**:
   - รองรับ Record Types: `ALL`, `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, `SOA`
   - สลับ DNS Resolver ได้ตามต้องการ (System Default, Cloudflare `1.1.1.1`, Google `8.8.8.8`, Quad9 `9.9.9.9`, OpenDNS)
@@ -111,18 +120,18 @@
 - **Reverse DNS (PTR)**: ป้อน IP เพื่อค้นหาชื่อ Hostname ย้อนกลับ
 - **WHOIS Domain & IP Lookup**: ตรวจสอบข้อมูลเจ้าของโดเมน, Registrar, Creation/Expiry Date, Name Servers พร้อม Raw Text
 
-### 9. 🖥️ Server Mode (iPerf3 Server Daemon)
+### 10. 🖥️ Server Mode (iPerf3 Server Daemon)
 - เปิด/ปิด iPerf3 Server ภายในเครื่องได้โดยตรงผ่านหน้าเว็บ
 - กำหนด Port (ค่าเริ่มต้น 5201)
 - มีจุดสถานะไฟเขียว/แดง (Live Server Status Dot) แจ้งเตือนสถานะการทำงานแบบ Real-time
 
-### 10. 📊 Test History & Data Export
+### 11. 📊 Test History & Data Export
 - บันทึกประวัติการทดสอบทุกประเภท (iPerf3, Traceroute, Nmap)
 - เปิดดูย้อนหลังได้ครบถ้วน: กราฟ Throughput, ตาราง Hop Latency, ตาราง Port Nmap และ Console Log
 - ปุ่ม **Export to CSV** และ **Export to JSON** สำหรับนำข้อมูลไปทำรายงาน
 - ค้นหาและกรองประวัติการทดสอบตามประเภทและชื่อเป้าหมาย
 
-### 11. 🛡️ Remote Access Portal (Web Guacamole)
+### 12. 🛡️ Remote Access Portal (Web Guacamole)
 - เชื่อมต่อ Remote Desktop (RDP), VNC, หรือ SSH ไปยังเครื่องปลายทางผ่านเบราว์เซอร์โดยตรง ไม่ต้องลงโปรแกรม Client เพิ่มเติม
 
 ---
@@ -137,26 +146,14 @@
                ┌───────────────────────────────┐
                │    Frontend (Nginx + React)   │
                │   Modern Dark Dashboard UI    │
-               └──────────────┬────────────────┘
-                              │
-                    Proxy API │ & WebSocket
-                              ▼
-               ┌───────────────────────────────┐
-               │     Backend (FastAPI / Py)    │
-               │  - iPerf3 Engine (Client/Srv) │
-               │  - Nmap Scanner & Parser      │
-               │  - IPAM Scanner (Fping+ICMP)  │
-               │  - VLAN & Subnet Storage      │
-               │  - DNS/WHOIS (dig, whois)     │
-               └──────────────┬────────────────┘
-                              │
-                   Volume     │ /app/data
-                              ▼
-               ┌───────────────────────────────┐
-               │     Data Persistence (JSON)   │
-               │  history.json / subnets.json  │
-               │  vlans.json                   │
-               └───────────────────────────────┘
+               └───────┬──────────────┬────────┘
+                       │              │
+             Proxy API │              │ Proxy /speedtest/
+             & WS      ▼              ▼
+       ┌─────────────────────┐  ┌─────────────────────┐
+       │ Backend (FastAPI)   │  │ OpenSpeedTest       │
+       │ iPerf3 / Nmap / etc │  │ (Port 3002 Direct)  │
+       └─────────────────────┘  └─────────────────────┘
 ```
 
 ---
@@ -190,6 +187,7 @@
 | บริการ (Service) | พอร์ต (Port) | URL สำหรับเปิดใช้งาน | คำอธิบาย |
 | :--- | :--- | :--- | :--- |
 | **iPerf3 Hub Web GUI** | `3001` | [http://localhost:3001](http://localhost:3001) | หน้า Dashboard หลักของระบบ |
+| **HTML5 SpeedTest (LAN/Mobile)** | `3002` | [http://localhost:3002](http://localhost:3002) | SpeedTest ตรงสำหรับมือถือ/อุปกรณ์ใน LAN หรือสแกน QR Code |
 | **Backend API (Swagger Docs)** | `8001` | [http://localhost:8001/docs](http://localhost:8001/docs) | เอกสาร API และทดสอบ Endpoint |
 | **Remote Access Portal** | `8088` | [http://localhost:8088](http://localhost:8088) | เกตเวย์ Remote Desktop / SSH |
 

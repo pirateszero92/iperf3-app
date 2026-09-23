@@ -252,7 +252,11 @@ async def health():
 
 @app.get("/api/mode")
 async def get_app_mode():
-    return {"mode": "full", "remote_port": int(os.environ.get("REMOTE_PORT", 8088))}
+    return {
+        "mode": "full",
+        "remote_port": int(os.environ.get("REMOTE_PORT", 8088)),
+        "speedtest_port": int(os.environ.get("SPEEDTEST_PORT", 3002)),
+    }
 
 # ---------------------------------------------------------------------------
 # Server Mode

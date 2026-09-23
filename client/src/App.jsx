@@ -10,10 +10,12 @@ import DnsWhois from './components/DnsWhois'
 import IpCalculator from './components/IpCalculator'
 import TrafficAnalyzer from './components/TrafficAnalyzer'
 import SslAnalyzer from './components/SslAnalyzer'
+import OpenSpeedTest from './components/OpenSpeedTest'
 
 export default function App() {
   const [appMode, setAppMode] = useState('full') // 'full' | 'portable'
   const [remotePort, setRemotePort] = useState(8088)
+  const [speedtestPort, setSpeedtestPort] = useState(3002)
   const [activeTab, setActiveTab] = useState('client')
   const [serverStatus, setServerStatus] = useState('stopped')
   const [historyKey, setHistoryKey] = useState(0)
@@ -29,6 +31,9 @@ export default function App() {
         }
         if (d && d.remote_port) {
           setRemotePort(d.remote_port)
+        }
+        if (d && d.speedtest_port) {
+          setSpeedtestPort(d.speedtest_port)
         }
       })
       .catch(() => {})
@@ -56,23 +61,26 @@ export default function App() {
         { id: 'history', label: 'Test History', icon: '📊' },
       ]
     : [
-        { id: 'client',  label: 'Client Mode',    icon: '⚡' },
-        { id: 'trace',   label: 'Route Trace',    icon: '📍' },
-        { id: 'traffic', label: 'Traffic & PCAP', icon: '📡' },
-        { id: 'nmap',    label: 'Nmap Scanner',   icon: '🔍' },
-        { id: 'ssl',     label: 'SSL Analyzer',   icon: '🔐' },
-        { id: 'ipam',    label: 'IP Management',  icon: '🌐' },
-        { id: 'ipcalc',  label: 'IP Calculator',  icon: '🧮' },
-        { id: 'dns',     label: 'DNS & WHOIS',    icon: '🔎' },
-        { id: 'server',  label: 'Server Mode',    icon: '🖥️', hasDot: true },
-        { id: 'history', label: 'Test History',   icon: '📊' },
-        { id: 'remote',  label: 'Remote Access',  icon: '🛡️' },
+        { id: 'client',    label: 'Client Mode',     icon: '⚡' },
+        { id: 'speedtest', label: 'HTML5 SpeedTest', icon: '🚀' },
+        { id: 'trace',     label: 'Route Trace',     icon: '📍' },
+        { id: 'traffic',   label: 'Traffic & PCAP',  icon: '📡' },
+        { id: 'nmap',      label: 'Nmap Scanner',    icon: '🔍' },
+        { id: 'ssl',       label: 'SSL Analyzer',    icon: '🔐' },
+        { id: 'ipam',      label: 'IP Management',   icon: '🌐' },
+        { id: 'ipcalc',    label: 'IP Calculator',   icon: '🧮' },
+        { id: 'dns',       label: 'DNS & WHOIS',     icon: '🔎' },
+        { id: 'server',    label: 'Server Mode',     icon: '🖥️', hasDot: true },
+        { id: 'history',   label: 'Test History',    icon: '📊' },
+        { id: 'remote',    label: 'Remote Access',   icon: '🛡️' },
       ]
 
   const handleStartTraceFromClient = (host) => {
     setTraceHost(host)
     setActiveTab('trace')
   }
+
+  const isFullView = activeTab === 'remote' || activeTab === 'speedtest'
 
   return (
     <div className="app-layout">
@@ -110,13 +118,16 @@ export default function App() {
       </aside>
 
       {/* ── Main ── */}
-      <main className={`main-content ${activeTab === 'remote' ? 'main-content-remote' : ''}`}>
-        <div className={`content-inner ${activeTab === 'remote' ? 'content-inner-remote' : ''}`}>
+      <main className={`main-content ${isFullView ? 'main-content-remote' : ''}`}>
+        <div className={`content-inner ${isFullView ? 'content-inner-remote' : ''}`}>
           {activeTab === 'client' && (
             <ClientMode
               onComplete={() => setHistoryKey(k => k + 1)}
               onRunTrace={!isPortable ? handleStartTraceFromClient : null}
             />
+          )}
+          {!isPortable && activeTab === 'speedtest' && (
+            <OpenSpeedTest speedtestPort={speedtestPort} />
           )}
           {!isPortable && activeTab === 'trace' && (
             <TraceRoute initialHost={traceHost} />

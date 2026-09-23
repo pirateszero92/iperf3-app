@@ -250,12 +250,48 @@ class TraceConfig(BaseModel):
 async def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
 
+def get_discovered_host_ips() -> List[str]:
+    ips = []
+    # 1. Environment variable if explicitly specified
+    env_ip = os.environ.get("HOST_IP")
+    if env_ip and env_ip not in ips:
+        ips.append(env_ip)
+
+    # 2. host.docker.internal (resolves to Windows Host Wi-Fi / LAN IP in Docker)
+    try:
+        h_ip = socket.gethostbyname("host.docker.internal")
+        if h_ip and not h_ip.startswith("127.") and h_ip not in ips:
+            ips.append(h_ip)
+    except Exception:
+        pass
+
+    # 3. Default route / active outbound IP
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        out_ip = s.getsockname()[0]
+        s.close()
+        if out_ip and not out_ip.startswith("127.") and out_ip not in ips:
+            ips.append(out_ip)
+    except Exception:
+        pass
+
+    # 4. Fallback default
+    if not ips:
+        ips.append("127.0.0.1")
+
+    return ips
+
 @app.get("/api/mode")
 async def get_app_mode():
+    host_ips = get_discovered_host_ips()
+    primary_host_ip = host_ips[0] if host_ips else "127.0.0.1"
     return {
         "mode": "full",
         "remote_port": int(os.environ.get("REMOTE_PORT", 8088)),
         "speedtest_port": int(os.environ.get("SPEEDTEST_PORT", 3002)),
+        "host_ip": primary_host_ip,
+        "host_ips": host_ips,
     }
 
 # ---------------------------------------------------------------------------

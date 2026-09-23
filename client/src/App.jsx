@@ -16,6 +16,8 @@ export default function App() {
   const [appMode, setAppMode] = useState('full') // 'full' | 'portable'
   const [remotePort, setRemotePort] = useState(8088)
   const [speedtestPort, setSpeedtestPort] = useState(3002)
+  const [hostIp, setHostIp] = useState('')
+  const [hostIps, setHostIps] = useState([])
   const [activeTab, setActiveTab] = useState('client')
   const [serverStatus, setServerStatus] = useState('stopped')
   const [historyKey, setHistoryKey] = useState(0)
@@ -34,6 +36,12 @@ export default function App() {
         }
         if (d && d.speedtest_port) {
           setSpeedtestPort(d.speedtest_port)
+        }
+        if (d && d.host_ip) {
+          setHostIp(d.host_ip)
+        }
+        if (d && d.host_ips) {
+          setHostIps(d.host_ips)
         }
       })
       .catch(() => {})
@@ -127,7 +135,11 @@ export default function App() {
             />
           )}
           {!isPortable && activeTab === 'speedtest' && (
-            <OpenSpeedTest speedtestPort={speedtestPort} />
+            <OpenSpeedTest
+              speedtestPort={speedtestPort}
+              hostIp={hostIp}
+              hostIps={hostIps}
+            />
           )}
           {!isPortable && activeTab === 'trace' && (
             <TraceRoute initialHost={traceHost} />

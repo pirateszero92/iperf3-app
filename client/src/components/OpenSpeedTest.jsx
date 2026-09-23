@@ -1,13 +1,26 @@
 import { useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 
-export default function OpenSpeedTest({ speedtestPort = 3002 }) {
+export default function OpenSpeedTest({ speedtestPort = 3002, hostIp = '', hostIps = [] }) {
   const [iframeKey, setIframeKey] = useState(0)
   const [showQrModal, setShowQrModal] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [customIp, setCustomIp] = useState('')
+  const [isEditingIp, setIsEditingIp] = useState(false)
+
+  // Current browser hostname
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+  const isLoopback = currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '::1'
+
+  // Pick best default IP:
+  // If user entered custom IP -> use that
+  // Else if browser is already accessing via physical IP (not localhost) -> use currentHost
+  // Else use hostIp discovered by backend (e.g. 172.16.0.5)
+  // Else fallback to currentHost
+  const activeIp = customIp.trim() || (!isLoopback && currentHost ? currentHost : (hostIp || currentHost))
 
   // Direct LAN URL for other devices (phones, tablets, laptops)
-  const directUrl = `http://${window.location.hostname}:${speedtestPort}`
+  const directUrl = `http://${activeIp}:${speedtestPort}`
   // Embedded URL through local reverse proxy
   const embeddedUrl = '/speedtest/'
 
@@ -108,8 +121,8 @@ export default function OpenSpeedTest({ speedtestPort = 3002 }) {
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: 'rgba(6, 182, 212, 0.1)',
-              borderColor: 'rgba(6, 182, 212, 0.25)',
+              background: 'rgba(6, 182, 212, 0.12)',
+              borderColor: 'rgba(6, 182, 212, 0.3)',
               color: 'var(--cyan)'
             }}
             onClick={() => setShowQrModal(true)}
@@ -143,57 +156,170 @@ export default function OpenSpeedTest({ speedtestPort = 3002 }) {
       {/* ── LAN Access Notice Strip ── */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        flexDirection: 'column',
         background: '#0d1527',
-        border: '1px solid rgba(6, 182, 212, 0.2)',
+        border: '1px solid rgba(6, 182, 212, 0.25)',
         borderRadius: 'var(--radius-sm)',
-        padding: '8px 16px',
+        padding: '10px 16px',
         fontSize: 12,
         color: 'var(--text-secondary)',
         flexShrink: 0,
-        flexWrap: 'wrap',
         gap: 8,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: 'var(--cyan)', fontSize: 14 }}>📶</span>
-          <span>
-            Test from any Phone / PC on your Wi-Fi or LAN:
-          </span>
-          <code style={{
-            background: 'rgba(0,0,0,0.4)',
-            padding: '2px 8px',
-            borderRadius: 4,
-            color: 'var(--cyan)',
-            fontFamily: 'monospace',
-            border: '1px solid rgba(6,182,212,0.3)',
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'var(--cyan)', fontSize: 15 }}>📶</span>
+              <span style={{ fontWeight: 500 }}>Test from Mobile / LAN:</span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <code style={{
+                background: 'rgba(0,0,0,0.5)',
+                padding: '3px 10px',
+                borderRadius: 6,
+                color: 'var(--cyan)',
+                fontFamily: 'monospace',
+                fontSize: 13,
+                fontWeight: 600,
+                border: '1px solid rgba(6,182,212,0.3)',
+                boxShadow: '0 0 10px rgba(6,182,212,0.15)',
+              }}>
+                {directUrl}
+              </code>
+
+              {hostIp && (
+                <span style={{
+                  fontSize: 11,
+                  color: '#10b981',
+                  background: 'rgba(16,185,129,0.12)',
+                  border: '1px solid rgba(16,185,129,0.3)',
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px #10b981' }} />
+                  Host IP: <strong style={{ color: '#fff', marginLeft: 2 }}>{activeIp}</strong>
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn-tiny"
+              onClick={() => setIsEditingIp(v => !v)}
+              style={{
+                cursor: 'pointer',
+                color: isEditingIp ? 'var(--cyan)' : 'var(--text-secondary)',
+                borderColor: isEditingIp ? 'var(--cyan)' : 'var(--border)'
+              }}
+              title="Select or enter different Host IP"
+            >
+              {isEditingIp ? '✕ Close' : '⚙️ Select / Custom IP'}
+            </button>
+
+            <button
+              type="button"
+              className="btn-tiny"
+              onClick={handleCopyLink}
+              style={{
+                cursor: 'pointer',
+                background: copied ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.06)',
+                borderColor: copied ? '#10b981' : 'var(--border)',
+                color: copied ? '#10b981' : 'var(--text-primary)',
+              }}
+            >
+              {copied ? '✓ Copied!' : '📋 Copy URL'}
+            </button>
+
+            <button
+              type="button"
+              className="btn-tiny"
+              onClick={() => setShowQrModal(true)}
+              style={{
+                cursor: 'pointer',
+                color: '#fff',
+                background: 'linear-gradient(135deg, rgba(6,182,212,0.3), rgba(16,185,129,0.3))',
+                borderColor: 'rgba(6,182,212,0.5)',
+                fontWeight: 600,
+              }}
+            >
+              📱 View QR Code
+            </button>
+          </div>
+        </div>
+
+        {/* IP Selector / Custom Input Tray */}
+        {isEditingIp && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'rgba(0,0,0,0.3)',
+            padding: '8px 12px',
+            borderRadius: 6,
+            border: '1px solid rgba(255,255,255,0.08)',
+            flexWrap: 'wrap',
           }}>
-            {directUrl}
-          </code>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button
-            type="button"
-            className="btn-tiny"
-            onClick={handleCopyLink}
-            style={{
-              cursor: 'pointer',
-              background: copied ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.06)',
-              borderColor: copied ? '#10b981' : 'var(--border)',
-              color: copied ? '#10b981' : 'var(--text-primary)',
-            }}
-          >
-            {copied ? '✓ Copied!' : '📋 Copy URL'}
-          </button>
-          <button
-            type="button"
-            className="btn-tiny"
-            onClick={() => setShowQrModal(true)}
-            style={{ cursor: 'pointer', color: 'var(--cyan)' }}
-          >
-            📱 View QR Code
-          </button>
-        </div>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Detected IPs:</span>
+            {hostIps && hostIps.length > 0 ? (
+              hostIps.map(ip => (
+                <button
+                  key={ip}
+                  type="button"
+                  className="btn-tiny"
+                  style={{
+                    background: activeIp === ip ? 'rgba(6,182,212,0.25)' : 'rgba(255,255,255,0.05)',
+                    borderColor: activeIp === ip ? 'var(--cyan)' : 'var(--border)',
+                    color: activeIp === ip ? 'var(--cyan)' : 'var(--text-primary)',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                  }}
+                  onClick={() => {
+                    setCustomIp(ip)
+                  }}
+                >
+                  {ip} {ip === hostIp ? '(Primary Host)' : ''}
+                </button>
+              ))
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>No extra IPs found</span>
+            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Manual IP:</span>
+              <input
+                type="text"
+                className="form-input"
+                style={{ width: 140, padding: '3px 8px', fontSize: 12 }}
+                placeholder="e.g. 172.16.0.5"
+                value={customIp}
+                onChange={e => setCustomIp(e.target.value)}
+              />
+              {customIp && (
+                <button
+                  type="button"
+                  className="btn-tiny"
+                  onClick={() => setCustomIp('')}
+                  style={{ cursor: 'pointer', fontSize: 10 }}
+                  title="Reset to auto-detected IP"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── SpeedTest Iframe ── */}
@@ -332,7 +458,8 @@ export default function OpenSpeedTest({ speedtestPort = 3002 }) {
               width: '100%',
               lineHeight: 1.5,
             }}>
-              💡 <strong>Tip:</strong> Ensure your phone or tablet is connected to the same Wi-Fi router / subnet as this server to test local throughput without consuming cellular data.
+              💡 <strong>Host IP Detected:</strong> {activeIp}<br />
+              Ensure your phone or tablet is connected to the same Wi-Fi router / subnet as this server to test local throughput without consuming cellular data.
             </div>
 
             <button

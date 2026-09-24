@@ -15,14 +15,15 @@
   - [2. 🚀 HTML5 SpeedTest (OpenSpeedTest™ Client-less)](#2--html5-speedtest-openspeedtest-client-less)
   - [3. 📍 Route Trace & Loop Monitoring](#3--route-trace--loop-monitoring)
   - [4. 📡 Traffic & Packet Analyzer (Loop/Storm & PCAP)](#4--traffic--packet-analyzer-loopstorm-detection--wireshark-pcap)
-  - [5. 🔍 Nmap Network Scanner & Security Audit](#5--nmap-network-scanner--security-audit)
-  - [6. 🔐 SSL / TLS Certificate Analyzer](#6--ssl--tls-certificate-analyzer)
-  - [7. 🌐 IP Address Management (IPAM) & VLAN Pool](#7--ip-address-management-ipam--vlan-pool)
-  - [8. 🧮 IP & VLSM Calculator](#8--ip--vlsm-calculator)
-  - [9. 🔎 DNS & WHOIS Intelligence Suite](#9--dns--whois-intelligence-suite)
-  - [10. 🖥️ Server Mode (iPerf3 Server Daemon)](#10-️-server-mode-iperf3-server-daemon)
-  - [11. 📊 Test History & Data Export](#11--test-history--data-export)
-  - [12. 🛡️ Remote Access Portal (Web Guacamole)](#12-️-remote-access-portal-web-guacamole)
+  - [5. 🗺️ Real-Time Network Map (Topology Visualizer)](#5--real-time-network-map-topology-visualizer)
+  - [6. 🔍 Nmap Network Scanner & Security Audit](#6--nmap-network-scanner--security-audit)
+  - [7. 🔐 SSL / TLS Certificate Analyzer](#7--ssl--tls-certificate-analyzer)
+  - [8. 🌐 IP Address Management (IPAM) & VLAN Pool](#8--ip-address-management-ipam--vlan-pool)
+  - [9. 🧮 IP & VLSM Calculator](#9--ip--vlsm-calculator)
+  - [10. 🔎 DNS & WHOIS Intelligence Suite](#10--dns--whois-intelligence-suite)
+  - [11. 🖥️ Server Mode (iPerf3 Server Daemon)](#11-️-server-mode-iperf3-server-daemon)
+  - [12. 📊 Test History & Data Export](#12--test-history--data-export)
+  - [13. 🛡️ Remote Access Portal (Web Guacamole)](#13-️-remote-access-portal-web-guacamole)
 - [🏗️ สถาปัตยกรรมระบบ (Architecture)](#️-สถาปัตยกรรมระบบ-architecture)
 - [🚀 วิธีการติดตั้งและเริ่มใช้งาน (Quick Start)](#-วิธีการติดตั้งและเริ่มใช้งาน-quick-start)
   - [ข้อกำหนดเบื้องต้น (Prerequisites)](#ข้อกำหนดเบื้องต้น-prerequisites)
@@ -69,7 +70,25 @@
   - กำหนดระยะเวลา (เช่น 30 วินาที) หรือจำนวนแพ็กเก็ตสูงสุด
   - ปุ่ม **📥 Download .pcap** สำหรับดาวน์โหลดไฟล์ไปเปิดวิเคราะห์ปัญหาใน **Wireshark** ได้ทันที
 
-### 5. 🔍 Nmap Network Scanner & Security Audit
+### 5. 🗺️ Real-Time Network Map (Topology Visualizer)
+- **Interactive Network Graph (React Flow + Dagre)**:
+  - วาดแผนผังเครือข่ายแบบอัตโนมัติ (Auto Hierarchical Layout) พร้อมสลับมุมมองแนวนอน (LR) หรือแนวตั้ง (TB) ได้ทันที
+  - แสดงสถานะ Online / Offline, RTT Ping Latency, Role (Gateway, Server, Client, Switch, AP) และ IP Address
+- **Subnet & Trace Auto-Discovery**:
+  - **⚡ Scan & Map**: สแกนค้นหาอุปกรณ์ทั้งหมดใน Subnet ด้วย `fping` ความเร็วสูงและวาดแผนผังเครือข่ายอัตโนมัติ
+  - **📍 Trace to Topology**: แปลงเส้นทาง Hop จาก Traceroute มาเป็นโหนดและเส้นเชื่อมโยงบนแผนภาพ
+- **Cross-Tool Integration (คลิกเดียวทดสอบต่อได้ทันที)**:
+  - คลิกที่โหนดใดก็ได้เพื่อเปิดรายละเอียด และกดปุ่มลัดส่ง IP ไปทดสอบต่อในโมดูลอื่นได้ทันที:
+    - ⚡ **iPerf3** — ส่ง IP เข้าหน้า Client Mode เพื่อทดสอบ Bandwidth
+    - 📍 **Trace** — ส่ง IP เข้าหน้า Route Trace
+    - 🔍 **Nmap** — ส่ง IP เข้าหน้า Nmap Scanner
+    - 🔐 **SSL** — ส่ง Hostname/IP เข้าหน้า SSL Analyzer
+    - 🔎 **DNS** — ส่ง Hostname/IP เข้าหน้า DNS & WHOIS
+- **Live Background Health Monitoring**:
+  - สตรีมสถานะโหนดแบบ Real-time ผ่าน WebSocket พร้อมโหมด Auto Ping ตรวจจับโหนดที่ Offline ทันที
+- **Data Export**: ดาวน์โหลดแผนผังเครือข่ายออกมาเป็นไฟล์ JSON เพื่อนำไปวิเคราะห์หรือสำรองข้อมูล
+
+### 6. 🔍 Nmap Network Scanner & Security Audit
 - **Scan Profiles ครอบคลุม**:
   - โหมดมาตรฐาน: Quick scan, Intense scan, All TCP ports (1-65535), Ping scan
   - โหมดความปลอดภัย (Security Audit):
@@ -80,7 +99,7 @@
 - **Live Terminal Stream**: แสดง Console Log แบบสดๆ พร้อมปุ่มคัดลอก
 - **ตารางสรุปผลลัพธ์**: รายการ Port, Protocol, State, Service, Version และ Host Details
 
-### 6. 🔐 SSL / TLS Certificate Analyzer
+### 7. 🔐 SSL / TLS Certificate Analyzer
 - ตรวจสอบใบรับรอง HTTPS / TLS ของ Domain หรือ IP ได้อย่างแม่นยำ
 - **Expiration Countdown**: นับถอยหลังจำนวนวันก่อนใบรับรองหมดอายุ พร้อม Badge สีเขียว/เหลือง/แดง
 - **Security Assessment**: ตรวจสอบสถานะความน่าเชื่อถือ (Trusted Root CA vs Self-Signed/Untrusted)
@@ -88,7 +107,7 @@
 - **Certificate Info**: แสดง Common Name (CN), Organization, Issuer (CA), Valid From, Valid Until, Signature Algorithm, Serial Number
 - **SANs Explorer**: ค้นหาและกรองรายการ Subject Alternative Names (SANs) ได้แบบ Real-time
 
-### 7. 🌐 IP Address Management (IPAM) & VLAN Pool
+### 8. 🌐 IP Address Management (IPAM) & VLAN Pool
 - **จัดการ Subnets (CIDR)**: เพิ่มและติดตาม Subnet เช่น `192.168.1.0/24`, `10.1.1.0/24` ได้อย่างอิสระ
 - **High-Accuracy Pure ICMP Echo Scan (`fping`)**: ป้องกันปัญหา Firewall / Proxy หลอกสถานะพอร์ต 80/443 ตรวจจับเครื่องที่มีอยู่จริงในระบบได้อย่างแม่นยำ
 - **ตารางแสดงสถานะ IP รายเครื่อง**:
@@ -101,7 +120,7 @@
   - เชื่อมโยง (Assign) VLAN เข้ากับ Subnet แต่ละวง พร้อม Badge แสดงชื่อ VLAN สวยงาม
   - ฟิลเตอร์คัดกรอง Subnet ตาม VLAN ได้ในคลิกเดียว
 
-### 8. 🧮 IP & VLSM Calculator
+### 9. 🧮 IP & VLSM Calculator
 - **Subnet Calculator แบบ Modern UI**:
   - ป้อน IP และเลือก Netmask (/1 ถึง /32)
   - คำนวณ Network Address, Broadcast, Usable Host Range, Subnet Mask, Wildcard Mask, Total & Usable Hosts
@@ -112,7 +131,7 @@
 - **IPv6 Subnet Calculator**:
   - รองรับ IPv6 Prefix (/1 ถึง /128), ขยายรูปเต็ม (Expanded), ย่อรูป (Compressed), ตรวจสอบ Scope (Global Unicast, Link-Local, ULA)
 
-### 9. 🔎 DNS & WHOIS Intelligence Suite
+### 10. 🔎 DNS & WHOIS Intelligence Suite
 - **DNS Analyzer**:
   - รองรับ Record Types: `ALL`, `A`, `AAAA`, `CNAME`, `MX`, `NS`, `TXT`, `SOA`
   - สลับ DNS Resolver ได้ตามต้องการ (System Default, Cloudflare `1.1.1.1`, Google `8.8.8.8`, Quad9 `9.9.9.9`, OpenDNS)
@@ -120,18 +139,18 @@
 - **Reverse DNS (PTR)**: ป้อน IP เพื่อค้นหาชื่อ Hostname ย้อนกลับ
 - **WHOIS Domain & IP Lookup**: ตรวจสอบข้อมูลเจ้าของโดเมน, Registrar, Creation/Expiry Date, Name Servers พร้อม Raw Text
 
-### 10. 🖥️ Server Mode (iPerf3 Server Daemon)
+### 11. 🖥️ Server Mode (iPerf3 Server Daemon)
 - เปิด/ปิด iPerf3 Server ภายในเครื่องได้โดยตรงผ่านหน้าเว็บ
 - กำหนด Port (ค่าเริ่มต้น 5201)
 - มีจุดสถานะไฟเขียว/แดง (Live Server Status Dot) แจ้งเตือนสถานะการทำงานแบบ Real-time
 
-### 11. 📊 Test History & Data Export
+### 12. 📊 Test History & Data Export
 - บันทึกประวัติการทดสอบทุกประเภท (iPerf3, Traceroute, Nmap)
 - เปิดดูย้อนหลังได้ครบถ้วน: กราฟ Throughput, ตาราง Hop Latency, ตาราง Port Nmap และ Console Log
 - ปุ่ม **Export to CSV** และ **Export to JSON** สำหรับนำข้อมูลไปทำรายงาน
 - ค้นหาและกรองประวัติการทดสอบตามประเภทและชื่อเป้าหมาย
 
-### 12. 🛡️ Remote Access Portal (Web Guacamole)
+### 13. 🛡️ Remote Access Portal (Web Guacamole)
 - เชื่อมต่อ Remote Desktop (RDP), VNC, หรือ SSH ไปยังเครื่องปลายทางผ่านเบราว์เซอร์โดยตรง ไม่ต้องลงโปรแกรม Client เพิ่มเติม
 
 ---

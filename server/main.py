@@ -2423,4 +2423,563 @@ def get_internal_sniff_status():
     return {"active": traffic_engine.internal_active}
 
 
+# ===========================================================================
+# 7. Real-Time Network Map / Topology Visualizer
+# ===========================================================================
+
+class TopologyManager:
+    """In-memory session-scoped graph (nodes + edges) with WebSocket broadcast."""
+
+    def __init__(self):
+        self.sessions: dict[str, dict] = {}       # session_id -> {nodes, edges, created_at, updated_at, monitors}
+        self.MAX_NODES = 500
+
+    def create_session(self) -> str:
+        session_id = f"topo_{uuid.uuid4().hex[:10]}"
+        self.sessions[session_id] = {
+            "nodes": {},       # id -> node dict
+            "edges": {},       # id -> edge dict
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "monitors": {},    # monitor_id -> task
+        }
+        return session_id
+
+    def has_session(self, sid: str) -> bool:
+        return sid in self.sessions
+
+    def delete_session(self, sid: str):
+        s = self.sessions.pop(sid, None)
+        if s:
+            for m in list(s.get("monitors", {}).values()):
+                task = m.get("task")
+                if task and not task.done():
+                    task.cancel()
+                proc = m.get("proc")
+                if proc and proc.returncode is None:
+                    try: proc.terminate()
+                    except Exception: pass
+
+    def upsert_node(self, sid: str, node: dict) -> bool:
+        if sid not in self.sessions:
+            return False
+        nodes = self.sessions[sid]["nodes"]
+        if node["id"] in nodes:
+            # merge: preserve existing fields not in new node
+            existing = nodes[node["id"]]
+            existing.update({k: v for k, v in node.items() if v not in (None, "") or k not in existing})
+            nodes[node["id"]]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            if len(nodes) >= self.MAX_NODES:
+                return False
+            node.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+            nodes[node["id"]] = node
+        self.sessions[sid]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        return True
+
+    def upsert_edge(self, sid: str, edge: dict) -> bool:
+        if sid not in self.sessions:
+            return False
+        edges = self.sessions[sid]["edges"]
+        if edge["id"] in edges:
+            existing = edges[edge["id"]]
+            existing.update({k: v for k, v in edge.items() if v not in (None, "") or k not in existing})
+            edges[edge["id"]]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            edge.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+            edges[edge["id"]] = edge
+        self.sessions[sid]["updated_at"] = datetime.now(timezone.utc).isoformat()
+        return True
+
+    def get_snapshot(self, sid: str) -> dict:
+        s = self.sessions.get(sid)
+        if not s:
+            return {"nodes": [], "edges": []}
+        return {
+            "nodes": list(s["nodes"].values()),
+            "edges": list(s["edges"].values()),
+            "created_at": s["created_at"],
+            "updated_at": s["updated_at"],
+        }
+
+topology_mgr = TopologyManager()
+
+
+class TopologySubnetDiscover(BaseModel):
+    subnet_id: str
+    include_gateway: bool = True
+
+
+class TopologyTraceDiscover(BaseModel):
+    destination: str
+    max_hops: int = 20
+    protocol: str = "icmp"
+    probes: int = 3
+
+
+class TopologyMonitorStart(BaseModel):
+    targets: List[str] = []
+    interval_sec: int = 10
+    count: int = 3
+
+
+@app.post("/api/topology/session")
+async def topology_create_session():
+    sid = topology_mgr.create_session()
+    return {"session_id": sid}
+
+
+@app.get("/api/topology/session/{session_id}")
+async def topology_get_session(session_id: str):
+    if not topology_mgr.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Topology session not found")
+    snap = topology_mgr.get_snapshot(session_id)
+    return {"session_id": session_id, **snap}
+
+
+@app.delete("/api/topology/session/{session_id}")
+async def topology_delete_session(session_id: str):
+    topology_mgr.delete_session(session_id)
+    return {"status": "deleted"}
+
+
+@app.get("/api/topology/sessions")
+async def topology_list_sessions():
+    return [
+        {
+            "session_id": sid,
+            "node_count": len(s["nodes"]),
+            "edge_count": len(s["edges"]),
+            "created_at": s["created_at"],
+            "updated_at": s["updated_at"],
+        }
+        for sid, s in topology_mgr.sessions.items()
+    ]
+
+
+@app.websocket("/ws/topology/{session_id}")
+async def topology_ws(websocket: WebSocket, session_id: str):
+    channel = f"topology_{session_id}"
+    await manager.connect(channel, websocket)
+    # Always send a snapshot on connect
+    if topology_mgr.has_session(session_id):
+        snap = topology_mgr.get_snapshot(session_id)
+        await websocket.send_json({
+            "type": "snapshot",
+            "session_id": session_id,
+            "data": snap,
+        })
+    else:
+        await websocket.send_json({"type": "session_missing", "session_id": session_id})
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(channel, websocket)
+
+
+# ---------- Subnet -> topology adapter ----------
+
+@app.post("/api/topology/{session_id}/discover/subnet")
+async def topology_discover_subnet(session_id: str, req: TopologySubnetDiscover):
+    if not topology_mgr.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Topology session not found")
+
+    subnets = load_subnets()
+    sub = next((s for s in subnets if s.get("id") == req.subnet_id), None)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Subnet not found")
+
+    channel = f"topology_{session_id}"
+    net_addr = sub["network"]
+    cidr = sub["cidr"]
+    name = sub.get("name") or cidr
+    vlans = load_vlans()
+    vlan_obj = next((v for v in vlans if v["vlan_id"] == sub.get("vlan_id")), None)
+
+    # 1. Gateway / subnet root node
+    if req.include_gateway:
+        gw_node = {
+            "id": net_addr,
+            "label": name,
+            "type": "gateway",
+            "ip": net_addr,
+            "cidr": cidr,
+            "vlan_id": sub.get("vlan_id"),
+            "vlan_name": vlan_obj["name"] if vlan_obj else None,
+            "vlan_color": vlan_obj.get("color") if vlan_obj else None,
+            "status": "up",
+        }
+        topology_mgr.upsert_node(session_id, gw_node)
+        await manager.broadcast(channel, {"type": "node_update", "data": gw_node})
+        await asyncio.sleep(0.05)
+
+    # 2. Each used host -> node + edge from gateway
+    added = 0
+    for addr in sub.get("addresses", []):
+        ip = addr.get("ip")
+        if not ip or ip == net_addr:
+            continue
+        if addr.get("status") not in ("Used",):
+            # Only add hosts that have been scanned as alive
+            continue
+        dns_name = addr.get("dns") or ""
+        sys_name = addr.get("system_name") or ""
+        label = sys_name or dns_name or ip
+
+        host_node = {
+            "id": ip,
+            "label": label,
+            "type": "host",
+            "ip": ip,
+            "dns": dns_name,
+            "system_name": sys_name,
+            "machine_type": addr.get("machine_type") or "",
+            "status": "up" if addr.get("is_online") else "unknown",
+            "latency_ms": None,
+            "last_response": addr.get("last_response") or "",
+            "vlan_id": sub.get("vlan_id"),
+        }
+        # Parse numeric latency for edge weighting
+        m_lat = re.search(r"([\d\.]+)\s*ms", addr.get("last_response") or "")
+        if m_lat:
+            try:
+                host_node["latency_ms"] = float(m_lat.group(1))
+            except Exception:
+                pass
+
+        topology_mgr.upsert_node(session_id, host_node)
+        await manager.broadcast(channel, {"type": "node_update", "data": host_node})
+
+        if req.include_gateway:
+            edge = {
+                "id": f"e_{net_addr}_{ip}",
+                "source": net_addr,
+                "target": ip,
+                "type": "lan",
+                "status": "active" if host_node["status"] == "up" else "unknown",
+                "latency_ms": host_node.get("latency_ms"),
+            }
+            topology_mgr.upsert_edge(session_id, edge)
+            await manager.broadcast(channel, {"type": "edge_update", "data": edge})
+
+        added += 1
+        await asyncio.sleep(0.02)  # stagger for nice animation on client
+
+    await manager.broadcast(channel, {
+        "type": "discovery_complete",
+        "source": "subnet",
+        "subnet_id": sub["id"],
+        "nodes_added": added,
+    })
+
+    return {
+        "status": "complete",
+        "subnet_id": sub["id"],
+        "nodes_added": added,
+    }
+
+
+# ---------- Traceroute -> topology adapter ----------
+
+@app.post("/api/topology/{session_id}/discover/trace")
+async def topology_discover_trace(session_id: str, req: TopologyTraceDiscover):
+    if not topology_mgr.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Topology session not found")
+
+    dest = req.destination.strip()
+    if not dest:
+        raise HTTPException(status_code=400, detail="Destination cannot be empty")
+
+    channel = f"topology_{session_id}"
+
+    # Build traceroute command (Linux container) — same pattern as _run_trace_task
+    proto_flag = "-I" if req.protocol == "icmp" else ("-T" if req.protocol == "tcp" else "")
+    cmd = ["stdbuf", "-oL", "traceroute"]
+    if proto_flag:
+        cmd.append(proto_flag)
+    cmd += ["-q", str(req.probes), "-n", "-m", str(req.max_hops), "-w", "2", dest]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"traceroute not available: {e}")
+
+    # Source node (this container / host)
+    local_ip = get_discovered_host_ips()[0] if get_discovered_host_ips() else "127.0.0.1"
+    source_node = {
+        "id": local_ip,
+        "label": "You (this host)",
+        "type": "local",
+        "ip": local_ip,
+        "status": "up",
+    }
+    if not topology_mgr.upsert_node(session_id, source_node):
+        pass  # max nodes reached
+    await manager.broadcast(channel, {"type": "node_update", "data": source_node})
+
+    previous_ip = local_ip
+    added_hops = 0
+
+    try:
+        async for raw in proc.stdout:
+            text = raw.decode(errors="replace").strip()
+            if not text:
+                continue
+            parsed = parse_trace_line(text)
+            if not parsed:
+                continue
+
+            hop = parsed["hop"]
+            ip = parsed["ip"]
+            avg_rtt = parsed.get("avg_rtt")
+            status = parsed.get("status") or "timeout"
+
+            # Dedupe: if this IP already exists as a node, just update metrics
+            if ip != "*":
+                node_id = ip
+                if ip == local_ip:
+                    # skip self-loop hop (rare)
+                    previous_ip = ip
+                    continue
+                hop_node = {
+                    "id": node_id,
+                    "label": f"Hop {hop}: {ip}",
+                    "type": "router",
+                    "ip": ip,
+                    "hop": hop,
+                    "status": "up",
+                    "latency_ms": avg_rtt,
+                }
+                topology_mgr.upsert_node(session_id, hop_node)
+                await manager.broadcast(channel, {"type": "node_update", "data": hop_node})
+
+                edge_id = f"e_{previous_ip}_{ip}"
+                hop_edge = {
+                    "id": edge_id,
+                    "source": previous_ip,
+                    "target": ip,
+                    "type": "wan",
+                    "status": "active",
+                    "latency_ms": avg_rtt,
+                    "hop": hop,
+                }
+                topology_mgr.upsert_edge(session_id, hop_edge)
+                await manager.broadcast(channel, {"type": "edge_update", "data": hop_edge})
+
+                previous_ip = ip
+                added_hops += 1
+            else:
+                # Timeout hop: create invisible marker node
+                t_id = f"timeout_{hop}"
+                t_node = {
+                    "id": t_id,
+                    "label": f"Hop {hop}: * * *",
+                    "type": "unknown",
+                    "ip": None,
+                    "hop": hop,
+                    "status": "timeout",
+                    "latency_ms": None,
+                }
+                topology_mgr.upsert_node(session_id, t_node)
+                await manager.broadcast(channel, {"type": "node_update", "data": t_node})
+
+                t_edge = {
+                    "id": f"e_{previous_ip}_{t_id}",
+                    "source": previous_ip,
+                    "target": t_id,
+                    "type": "wan",
+                    "status": "timeout",
+                    "latency_ms": None,
+                    "hop": hop,
+                }
+                topology_mgr.upsert_edge(session_id, t_edge)
+                await manager.broadcast(channel, {"type": "edge_update", "data": t_edge})
+
+                previous_ip = t_id
+            await asyncio.sleep(0.05)
+    finally:
+        await proc.wait()
+
+    await manager.broadcast(channel, {
+        "type": "discovery_complete",
+        "source": "trace",
+        "destination": dest,
+        "hops_added": added_hops,
+    })
+
+    return {"status": "complete", "hops_added": added_hops}
+
+
+# ---------- Live Ping Monitor ----------
+
+async def _ping_monitor_task(session_id: str, monitor_id: str, targets: List[str], interval_sec: int, count: int):
+    channel = f"topology_{session_id}"
+    s = topology_mgr.sessions.get(session_id)
+    if not s:
+        return
+    try:
+        while True:
+            for target_ip in targets:
+                # ping -c <count> -W 1 <ip>
+                try:
+                    ping_cmd = ["ping", "-c", str(count), "-W", "1", "-n", target_ip]
+                    proc = await asyncio.create_subprocess_exec(
+                        *ping_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    out, _ = await asyncio.wait_for(proc.communicate(), timeout=max(5, count * 2 + 3))
+                    text = out.decode(errors="replace")
+
+                    # Parse RTT from "rtt min/avg/max/mdev = ..."
+                    rtt = None
+                    loss = 100.0
+                    up = proc.returncode == 0
+                    m_rtt = re.search(r"=\s*([\d\.]+)/([\d\.]+)/([\d\.]+)/", text)
+                    if m_rtt:
+                        try: rtt = float(m_rtt.group(2))
+                        except Exception: pass
+                    m_loss = re.search(r"([\d\.]+)%\s*packet loss", text)
+                    if m_loss:
+                        try: loss = float(m_loss.group(1))
+                        except Exception: pass
+
+                    # Update node if it exists
+                    node = s["nodes"].get(target_ip)
+                    if node:
+                        node["status"] = "up" if up else "down"
+                        node["latency_ms"] = rtt
+                        node["loss_percent"] = loss
+                        node["updated_at"] = datetime.now(timezone.utc).isoformat()
+                        await manager.broadcast(channel, {"type": "node_update", "data": node})
+
+                    # Update edges connected to this node
+                    for edge_id, edge in s["edges"].items():
+                        if edge["source"] == target_ip or edge["target"] == target_ip:
+                            edge["status"] = "active" if up else "down"
+                            if rtt is not None:
+                                edge["latency_ms"] = rtt
+                            edge["loss_percent"] = loss
+                            edge["updated_at"] = datetime.now(timezone.utc).isoformat()
+                            await manager.broadcast(channel, {"type": "edge_update", "data": edge})
+                except asyncio.TimeoutError:
+                    pass
+                except Exception:
+                    pass
+                await asyncio.sleep(0.1)
+
+            await asyncio.sleep(interval_sec)
+    except asyncio.CancelledError:
+        return
+
+
+@app.post("/api/topology/{session_id}/monitor/start")
+async def topology_monitor_start(session_id: str, req: TopologyMonitorStart):
+    if not topology_mgr.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Topology session not found")
+
+    s = topology_mgr.sessions[session_id]
+
+    # Resolve targets: if empty, use all node IPs in the session that have an IP
+    targets = []
+    for t in req.targets:
+        t = t.strip()
+        if t:
+            targets.append(t)
+    if not targets:
+        for n in s["nodes"].values():
+            ip = n.get("ip")
+            if ip and n.get("type") != "gateway":
+                targets.append(ip)
+
+    if not targets:
+        raise HTTPException(status_code=400, detail="No targets to monitor")
+
+    # Limit to avoid runaway
+    targets = targets[:32]
+    interval = max(5, min(req.interval_sec, 60))
+    count = max(1, min(req.count, 5))
+
+    monitor_id = f"mon_{uuid.uuid4().hex[:6]}"
+    task = asyncio.create_task(_ping_monitor_task(session_id, monitor_id, targets, interval, count))
+    s["monitors"][monitor_id] = {"task": task, "targets": targets, "interval": interval}
+
+    return {
+        "monitor_id": monitor_id,
+        "targets": targets,
+        "interval_sec": interval,
+        "count": count,
+    }
+
+
+@app.post("/api/topology/{session_id}/monitor/stop")
+async def topology_monitor_stop(session_id: str, monitor_id: Optional[str] = None):
+    if not topology_mgr.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Topology session not found")
+
+    s = topology_mgr.sessions[session_id]
+    stopped = 0
+    if monitor_id:
+        m = s["monitors"].pop(monitor_id, None)
+        if m:
+            task = m.get("task")
+            if task and not task.done():
+                task.cancel()
+            stopped = 1
+    else:
+        for m in list(s["monitors"].values()):
+            task = m.get("task")
+            if task and not task.done():
+                task.cancel()
+            stopped += 1
+        s["monitors"].clear()
+
+    return {"status": "stopped", "stopped": stopped}
+
+
+# ---------- Enrichment: top talkers from traffic engine ----------
+
+@app.post("/api/topology/{session_id}/enrich/traffic")
+async def topology_enrich_traffic(session_id: str):
+    if not topology_mgr.has_session(session_id):
+        raise HTTPException(status_code=404, detail="Topology session not found")
+
+    s = topology_mgr.sessions[session_id]
+    channel = f"topology_{session_id}"
+    snap = traffic_engine.flush_metrics_snapshot()
+    top_talkers = snap.get("top_talkers", [])
+    avg_rtt = snap.get("avg_rtt_ms", 0.0)
+
+    enriched = 0
+    for t in top_talkers:
+        ip = t.get("ip")
+        if not ip:
+            continue
+        node = s["nodes"].get(ip)
+        if node:
+            node["traffic_bytes"] = t.get("bytes", 0)
+            node["traffic_mb"] = t.get("mb", 0)
+            node["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await manager.broadcast(channel, {"type": "node_update", "data": node})
+            enriched += 1
+
+    # Also update all edges with the global avg RTT if they have no own measurement
+    for edge in s["edges"].values():
+        if edge.get("latency_ms") is None and avg_rtt > 0:
+            edge["latency_ms"] = avg_rtt
+            await manager.broadcast(channel, {"type": "edge_update", "data": edge})
+
+    return {
+        "status": "enriched",
+        "top_talkers": len(top_talkers),
+        "nodes_enriched": enriched,
+        "avg_rtt_ms": avg_rtt,
+    }
+
+
 

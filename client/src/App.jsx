@@ -11,6 +11,7 @@ import IpCalculator from './components/IpCalculator'
 import TrafficAnalyzer from './components/TrafficAnalyzer'
 import SslAnalyzer from './components/SslAnalyzer'
 import OpenSpeedTest from './components/OpenSpeedTest'
+import NetworkMap from './components/NetworkMap'
 
 export default function App() {
   const [appMode, setAppMode] = useState('full') // 'full' | 'portable'
@@ -21,7 +22,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('client')
   const [serverStatus, setServerStatus] = useState('stopped')
   const [historyKey, setHistoryKey] = useState(0)
+  const [clientHost, setClientHost] = useState('')
   const [traceHost, setTraceHost] = useState('')
+  const [nmapHost, setNmapHost] = useState('')
+  const [sslHost, setSslHost] = useState('')
+  const [dnsHost, setDnsHost] = useState('')
 
   // Detect mode from backend API
   useEffect(() => {
@@ -73,6 +78,7 @@ export default function App() {
         { id: 'speedtest', label: 'HTML5 SpeedTest', icon: '🚀' },
         { id: 'trace',     label: 'Route Trace',     icon: '📍' },
         { id: 'traffic',   label: 'Traffic & PCAP',  icon: '📡' },
+        { id: 'map',       label: 'Network Map',     icon: '🗺️' },
         { id: 'nmap',      label: 'Nmap Scanner',    icon: '🔍' },
         { id: 'ssl',       label: 'SSL Analyzer',    icon: '🔐' },
         { id: 'ipam',      label: 'IP Management',   icon: '🌐' },
@@ -83,12 +89,21 @@ export default function App() {
         { id: 'remote',    label: 'Remote Access',   icon: '🛡️' },
       ]
 
+  const handleNavigate = (tab, host) => {
+    if (tab === 'client') setClientHost(host)
+    if (tab === 'trace') setTraceHost(host)
+    if (tab === 'nmap') setNmapHost(host)
+    if (tab === 'ssl') setSslHost(host)
+    if (tab === 'dns') setDnsHost(host)
+    setActiveTab(tab)
+  }
+
   const handleStartTraceFromClient = (host) => {
     setTraceHost(host)
     setActiveTab('trace')
   }
 
-  const isFullView = activeTab === 'remote' || activeTab === 'speedtest'
+  const isFullView = activeTab === 'remote' || activeTab === 'speedtest' || activeTab === 'map'
 
   return (
     <div className="app-layout">
@@ -130,6 +145,7 @@ export default function App() {
         <div className={`content-inner ${isFullView ? 'content-inner-remote' : ''}`}>
           {activeTab === 'client' && (
             <ClientMode
+              initialHost={clientHost}
               onComplete={() => setHistoryKey(k => k + 1)}
               onRunTrace={!isPortable ? handleStartTraceFromClient : null}
             />
@@ -147,11 +163,14 @@ export default function App() {
           {!isPortable && activeTab === 'traffic' && (
             <TrafficAnalyzer />
           )}
+          {!isPortable && activeTab === 'map' && (
+            <NetworkMap onNavigate={handleNavigate} />
+          )}
           {!isPortable && activeTab === 'nmap' && (
-            <NmapScanner />
+            <NmapScanner initialHost={nmapHost} />
           )}
           {!isPortable && activeTab === 'ssl' && (
-            <SslAnalyzer />
+            <SslAnalyzer initialHost={sslHost} />
           )}
           {!isPortable && activeTab === 'ipam' && (
             <IpManagement />
@@ -160,7 +179,7 @@ export default function App() {
             <IpCalculator />
           )}
           {!isPortable && activeTab === 'dns' && (
-            <DnsWhois />
+            <DnsWhois initialHost={dnsHost} />
           )}
           {!isPortable && activeTab === 'server' && (
             <ServerMode onStatusChange={setServerStatus} />

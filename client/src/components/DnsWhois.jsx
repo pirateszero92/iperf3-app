@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const COMMON_RECORD_TYPES = ['ALL', 'A', 'AAAA', 'CNAME', 'MX', 'NS', 'TXT', 'SOA']
 const NAMESERVER_PRESETS = [
@@ -9,11 +9,17 @@ const NAMESERVER_PRESETS = [
   { label: 'OpenDNS (208.67.222.222)', value: '208.67.222.222' },
 ]
 
-export default function DnsWhois() {
+export default function DnsWhois({ initialHost }) {
   const [activeSubTab, setActiveSubTab] = useState('dns') // 'dns' | 'resolve' | 'whois'
 
   // DNS Lookup state
-  const [dnsTarget, setDnsTarget] = useState('google.com')
+  const [dnsTarget, setDnsTarget] = useState(initialHost || 'google.com')
+
+  useEffect(() => {
+    if (initialHost) {
+      setDnsTarget(initialHost)
+    }
+  }, [initialHost])
   const [recordType, setRecordType] = useState('ALL')
   const [nameserver, setNameserver] = useState('')
   const [dnsLoading, setDnsLoading] = useState(false)

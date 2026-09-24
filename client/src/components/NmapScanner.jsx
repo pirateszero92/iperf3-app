@@ -18,10 +18,17 @@ const PROFILES = [
   { name: 'HTTP Security Headers', cmd: 'nmap -p 80,443 --script http-security-headers,http-methods' },
 ]
 
-export default function NmapScanner() {
-  const [target, setTarget] = useState('127.0.0.1')
+export default function NmapScanner({ initialHost }) {
+  const [target, setTarget] = useState(initialHost || '127.0.0.1')
   const [selectedProfile, setSelectedProfile] = useState('Quick scan')
-  const [command, setCommand] = useState('nmap -T4 -F 127.0.0.1')
+  const [command, setCommand] = useState(`nmap -T4 -F ${initialHost || '127.0.0.1'}`)
+
+  useEffect(() => {
+    if (initialHost) {
+      setTarget(initialHost)
+      setCommand(`nmap -T4 -F ${initialHost}`)
+    }
+  }, [initialHost])
   const [activeTab, setActiveTab] = useState('output') // 'output' | 'ports' | 'details'
   
   const [scanning, setScanning] = useState(false)

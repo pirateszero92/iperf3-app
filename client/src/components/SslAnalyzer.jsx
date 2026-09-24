@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const PRESET_TARGETS = [
   'google.com',
@@ -8,9 +8,15 @@ const PRESET_TARGETS = [
   'wikipedia.org',
 ]
 
-export default function SslAnalyzer() {
-  const [target, setTarget] = useState('google.com')
+export default function SslAnalyzer({ initialHost }) {
+  const [target, setTarget] = useState(initialHost || 'google.com')
   const [port, setPort] = useState(443)
+
+  useEffect(() => {
+    if (initialHost) {
+      setTarget(initialHost)
+    }
+  }, [initialHost])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)

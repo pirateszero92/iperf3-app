@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Network Map — UI Mockup (iperf3-app)</title>
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --bg-2: #121827;
+    --bg-3: #1a2235;
+    --border: #2a3449;
+    --text: #e5e9f0;
+    --muted: #8892a6;
+    --accent: #3b82f6;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --orange: #f97316;
+    --gray: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  /* ===== Top Tabs (app chrome) ===== */
+  .app-tabs {
+    display: flex;
+    align-items: center;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px;
+    height: 44px;
+    gap: 4px;
+  }
+  .app-tabs .logo { font-weight: 700; color: var(--accent); margin-right: 16px; }
+  .app-tabs .tab {
+    padding: 8px 14px;
+    border-radius: 6px 6px 0 0;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .app-tabs .tab:hover { color: var(--text); }
+  .app-tabs .tab.active {
+    background: var(--bg-3);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-bottom-color: var(--bg-3);
+  }
+
+  /* ===== Toolbar ===== */
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .toolbar .group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding-right: 10px;
+    border-right: 1px solid var(--border);
+    margin-right: 4px;
+  }
+  .toolbar .group:last-child { border-right: none; }
+  .toolbar label { color: var(--muted); font-size: 11px; }
+  .toolbar select, .toolbar input {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 12px;
+    outline: none;
+  }
+  .toolbar select:focus, .toolbar input:focus { border-color: var(--accent); }
+  .toolbar button {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .toolbar button:hover { background: var(--border); border-color: var(--accent); }
+  .toolbar button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  .toolbar button.primary:hover { filter: brightness(1.15); }
+  .toolbar .session-badge {
+    background: var(--bg-3);
+    border: 1px solid var(--green);
+    color: var(--green);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-family: monospace;
+  }
+
+  /* ===== Main layout ===== */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    height: calc(100vh - 44px - 50px - 72px);
+  }
+  .canvas-wrap {
+    position: relative;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(59,130,246,0.06), transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(34,197,94,0.04), transparent 50%),
+      var(--bg);
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+  }
+  svg.canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+  svg.canvas:active { cursor: grabbing; }
+
+  .canvas-hint {
+    position: absolute;
+    bottom: 10px;
+    left: 14px;
+    color: var(--muted);
+    font-size: 11px;
+    pointer-events: none;
+  }
+
+  /* ===== Detail panel ===== */
+  .detail-panel {
+    background: var(--bg-2);
+    padding: 14px;
+    overflow-y: auto;
+  }
+  .detail-panel h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .detail-card {
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .detail-card.empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 40px 16px;
+    font-size: 12px;
+  }
+  .detail-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+  .detail-row .k { color: var(--muted); }
+  .detail-row .v { font-family: "SF Mono", Consolas, monospace; color: var(--text); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge.up { background: rgba(34,197,94,0.2); color: var(--green); }
+  .badge.down { background: rgba(239,68,68,0.2); color: var(--red); }
+  .badge.unknown { background: rgba(100,116,139,0.2); color: var(--muted); }
+
+  .action-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .action-row button {
+    flex: 1;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .action-row button:hover { background: var(--border); }
+
+  .services-list { margin-top: 8px; }
+  .service-chip {
+    display: inline-block;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    margin: 2px;
+    font-family: monospace;
+  }
+
+  /* ===== Legend ===== */
+  .legend {
+    display: flex;
+    gap: 16px;
+    padding: 8px 14px;
+    background: var(--bg-2);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .swatch {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1px solid var(--border);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 9px;
+  }
+  .legend .line {
+    width: 24px; height: 3px; border-radius: 2px;
+  }
+
+  /* ===== Status bar ===== */
+  .statusbar {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 20px;
+    background: var(--bg-3);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    font-family: monospace;
+  }
+  .statusbar .dot {
+    display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%;
+    margin-right: 6px;
+  }
+  .dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.warn { background: var(--yellow); }
+  .dot.err { background: var(--red); }
+
+  /* ===== SVG node styles ===== */
+  .node-group { cursor: pointer; }
+  .node-group:hover .node-body { filter: brightness(1.2); }
+  .node-body { transition: all 0.15s; }
+  .node-group.selected .node-body { stroke: var(--accent); stroke-width: 2; }
+  .node-label {
+    fill: var(--text);
+    font-size: 11px;
+    font-family: "SF Mono", Consolas, monospace;
+    pointer-events: none;
+  }
+  .node-type-label {
+    fill: var(--muted);
+    font-size: 9px;
+    pointer-events: none;
+    text-transform: uppercase;
+  }
+  .edge-label {
+    fill: var(--text);
+    font-size: 10px;
+    font-family: "SF Mono", Consolas, monospace;
+    paint-order: stroke;
+    stroke: var(--bg);
+    stroke-width: 3;
+    pointer-events: none;
+  }
+
+  /* Pulse animation for live metrics */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .live-indicator { animation: pulse 1.2s ease-in-out infinite; }
+
+  /* Fade-in for nodes appearing */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .node-group, .edge-line, .edge-label {
+    animation: fadeIn 0.4s ease-out;
+    transform-origin: center;
+    transform-box: fill-box;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-2); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ===== App Tabs ===== -->
+<div class="app-tabs">
+  <span class="logo">⚡ iperf3-app</span>
+  <div class="tab">🚀 Client</div>
+  <div class="tab">🖥️ Server</div>
+  <div class="tab">🔍 Trace Route</div>
+  <div class="tab">🗺️ Scanner</div>
+  <div class="tab">📊 IPAM</div>
+  <div class="tab">🌐 DNS</div>
+  <div class="tab">🔒 SSL</div>
+  <div class="tab active">🗺️ Network Map</div>
+  <div class="tab">📈 Traffic</div>
+</div>
+
+<!-- ===== Toolbar ===== -->
+<div class="toolbar">
+  <div class="group">
+    <span class="session-badge">● session: topo_a3f9c2</span>
+    <button>＋ New Session</button>
+    <button>💾 Save</button>
+  </div>
+  <div class="group">
+    <label>Subnet:</label>
+    <select>
+      <option>-- select subnet --</option>
+      <option>Engineering (192.168.1.0/24)</option>
+      <option>Servers (10.0.10.0/24)</option>
+      <option>IoT (10.0.20.0/24)</option>
+    </select>
+    <button class="primary">🔍 Discover</button>
+  </div>
+  <div class="group">
+    <label>Trace to:</label>
+    <input type="text" value="8.8.8.8" style="width: 120px" />
+    <button>📍 Trace Path</button>
+  </div>
+  <div class="group">
+    <button id="btn-monitor">⏱ Start Monitor</button>
+    <button>🎯 Fit View</button>
+    <button>🗑 Clear</button>
+  </div>
+</div>
+
+<!-- ===== Main (Canvas + Detail) ===== -->
+<div class="main">
+  <div class="canvas-wrap">
+    <svg class="canvas" id="canvas" viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet">
+      <!-- Edges layer (drawn first so nodes sit on top) -->
+      <g id="edges-layer"></g>
+      <!-- Nodes layer -->
+      <g id="nodes-layer"></g>
+    </svg>
+    <div class="canvas-hint">💡 Click a node to see details • Drag to pan • Scroll to zoom</div>
+  </div>
+
+  <!-- Detail panel -->
+  <div class="detail-panel">
+    <h3>Node Details</h3>
+    <div class="detail-card empty" id="detail-empty">
+      Click any node on the map to inspect its details and run actions.
+    </div>
+    <div class="detail-card" id="detail-card" style="display: none;">
+      <div class="detail-row"><span class="k">IP</span><span class="v" id="d-ip">—</span></div>
+      <div class="detail-row"><span class="k">Hostname</span><span class="v" id="d-host">—</span></div>
+      <div class="detail-row"><span class="k">Type</span><span class="v" id="d-type">—</span></div>
+      <div class="detail-row"><span class="k">Status</span><span class="v" id="d-status">—</span></div>
+      <div class="detail-row"><span class="k">VLAN</span><span class="v" id="d-vlan">—</span></div>
+      <div class="detail-row"><span class="k">RTT</span><span class="v" id="d-rtt">—</span></div>
+      <div class="detail-row"><span class="k">Traffic</span><span class="v" id="d-traffic">—</span></div>
+
+      <h3 style="margin-top: 12px;">Open Services</h3>
+      <div class="services-list" id="d-services"></div>
+
+      <div class="action-row">
+        <button>🌐 DNS/WHOIS</button>
+        <button>🔒 SSL Check</button>
+        <button>🗺️ Nmap</button>
+        <button>📍 Trace</button>
+        <button>⚡ iPerf3</button>
+      </div>
+    </div>
+
+    <h3 style="margin-top: 18px;">Session Statistics</h3>
+    <div class="detail-card">
+      <div class="detail-row"><span class="k">Nodes</span><span class="v" id="stat-nodes">0</span></div>
+      <div class="detail-row"><span class="k">Edges</span><span class="v" id="stat-edges">0</span></div>
+      <div class="detail-row"><span class="k">Up</span><span class="v" id="stat-up">0</span></div>
+      <div class="detail-row"><span class="k">Down</span><span class="v" id="stat-down">0</span></div>
+      <div class="detail-row"><span class="k">Avg RTT</span><span class="v" id="stat-rtt">—</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Legend ===== -->
+<div class="legend">
+  <div class="item"><span class="swatch" style="background: rgba(59,130,246,0.3); color: var(--accent);">🌐</span> Gateway / Internet</div>
+  <div class="item"><span class="swatch" style="background: rgba(34,197,94,0.25); color: var(--green);">🖥️</span> Host (up)</div>
+  <div class="item"><span class="swatch" style="background: rgba(239,68,68,0.25); color: var(--red);">🖥️</span> Host (down)</div>
+  <div class="item"><span class="swatch" style="background: rgba(249,115,22,0.25); color: var(--orange);">◉</span> Router hop</div>
+  <div class="item"><span class="line" style="background: var(--green);"></span> &lt; 50 ms</div>
+  <div class="item"><span class="line" style="background: var(--yellow);"></span> 50–150 ms</div>
+  <div class="item"><span class="line" style="background: var(--red);"></span> &gt; 150 ms / timeout</div>
+  <div class="item"><span class="line" style="background: var(--gray); border: 1px dashed var(--gray);"></span> Unknown</div>
+</div>
+
+<!-- ===== Status bar ===== -->
+<div class="statusbar">
+  <span><span class="dot ok"></span>WebSocket: connected</span>
+  <span><span class="dot ok live-indicator"></span>Monitor: active (5s)</span>
+  <span>Session: topo_a3f9c2</span>
+  <span>Last update: 2 s ago</span>
+  <span style="margin-left: auto; color: var(--muted);">iperf3-app v1.2 • real-time topology viewer</span>
+</div>
+
+<script>
+  // ===== Data =====
+  const NODES = [
+    // Subnet hosts
+    { id: 'gw',   type: 'gateway', x: 450, y: 80,  ip: '192.168.1.1',   host: 'gw.corp.local',     vlan: '10 — Management', status: 'up',      rtt: '0.8 ms',  traffic: '42 Mbps', services: ['22/ssh', '80/http', '443/https'] },
+    { id: 'h1',   type: 'host',    x: 160, y: 220, ip: '192.168.1.10',  host: 'web01',             vlan: '20 — Engineering', status: 'up',     rtt: '1.4 ms',  traffic: '128 Mbps', services: ['80/http', '443/https', '8080/proxy'] },
+    { id: 'h2',   type: 'host',    x: 340, y: 280, ip: '192.168.1.11',  host: 'db01',              vlan: '20 — Engineering', status: 'up',     rtt: '2.1 ms',  traffic: '84 Mbps',  services: ['3306/mysql'] },
+    { id: 'h3',   type: 'host',    x: 560, y: 280, ip: '192.168.1.20',  host: 'app02',             vlan: '20 — Engineering', status: 'up',     rtt: '3.2 ms',  traffic: '56 Mbps',  services: ['8080/http', '9090/metrics'] },
+    { id: 'h4',   type: 'host',    x: 740, y: 220, ip: '192.168.1.42',  host: 'printer-floor2',    vlan: '30 — IoT',         status: 'down',   rtt: '—',        traffic: '—',         services: [] },
+    // Traceroute path (outside subnet)
+    { id: 'r1',   type: 'router',  x: 540, y: 80,  ip: '10.255.0.1',    host: 'isp-edge',          vlan: '—', status: 'up', rtt: '6.1 ms',   traffic: '—',  services: [] },
+    { id: 'r2',   type: 'router',  x: 680, y: 80,  ip: '72.14.200.1',   host: 'google-as15169',    vlan: '—', status: 'up', rtt: '12.8 ms',  traffic: '—',  services: [] },
+    { id: 'r3',   type: 'router',  x: 800, y: 80,  ip: '*',             host: 'timeout',           vlan: '—', status: 'unknown', rtt: '—',     traffic: '—',  services: [] },
+  ];
+
+  const EDGES = [
+    { from: 'gw', to: 'h1', latency: 1.4,  status: 'ok' },
+    { from: 'gw', to: 'h2', latency: 2.1,  status: 'ok' },
+    { from: 'gw', to: 'h3', latency: 3.2,  status: 'ok' },
+    { from: 'gw', to: 'h4', latency: null,  status: 'down' },
+    // traceroute path
+    { from: 'gw', to: 'r1', latency: 6.1,   status: 'ok' },
+    { from: 'r1', to: 'r2', latency: 12.8,  status: 'ok' },
+    { from: 'r2', to: 'r3', latency: null,   status: 'timeout' },
+  ];
+
+  const svg = document.getElementById('canvas');
+  const edgesLayer = document.getElementById('edges-layer');
+  const nodesLayer = document.getElementById('nodes-layer');
+
+  // ===== Helpers =====
+  const findNode = id => NODES.find(n => n.id === id);
+
+  function edgeColor(latency, status) {
+    if (status === 'down' || status === 'timeout') return 'var(--red)';
+    if (latency == null) return 'var(--gray)';
+    if (latency < 50)  return 'var(--green)';
+    if (latency < 150) return 'var(--yellow)';
+    return 'var(--red)';
+  }
+  function edgeWidth(latency) {
+    if (latency == null) return 1.5;
+    if (latency < 10) return 2.5;
+    if (latency < 50) return 2;
+    return 1.5;
+  }
+
+  // ===== Render edges =====
+  function renderEdges() {
+    edgesLayer.innerHTML = '';
+    EDGES.forEach(e => {
+      const a = findNode(e.from);
+      const b = findNode(e.to);
+      if (!a || !b) return;
+
+      const color = edgeColor(e.latency, e.status);
+      const w = edgeWidth(e.latency);
+      const dash = e.status === 'timeout' ? '4 4' : (e.latency == null ? '2 3' : '0');
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'edge-line');
+      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', w);
+      if (dash !== '0') line.setAttribute('stroke-dasharray', dash);
+      edgesLayer.appendChild(line);
+
+      // Label at midpoint
+      if (e.latency != null || e.status === 'timeout') {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('class', 'edge-label');
+        text.setAttribute('x', (a.x + b.x) / 2);
+        text.setAttribute('y', (a.y + b.y) / 2 - 6);
+        text.setAttribute('text-anchor', 'middle');
+        text.textContent = e.latency != null ? e.latency + ' ms' : 'timeout';
+        edgesLayer.appendChild(text);
+      }
+    });
+  }
+
+  // ===== Render nodes =====
+  function renderNodes() {
+    nodesLayer.innerHTML = '';
+    NODES.forEach(n => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'node-group');
+      g.setAttribute('data-id', n.id);
+
+      const W = 130, H = 44;
+      const bgColor = {
+        gateway: 'rgba(59,130,246,0.15)',
+        host:    n.status === 'down' ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.12)',
+        router:  'rgba(249,115,22,0.15)',
+      }[n.type] || 'rgba(100,116,139,0.15)';
+
+      const borderColor = {
+        gateway: 'var(--accent)',
+        host:    n.status === 'down' ? 'var(--red)' : 'var(--green)',
+        router:  'var(--orange)',
+      }[n.type] || 'var(--gray)';
+
+      // Body
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('class', 'node-body');
+      rect.setAttribute('x', n.x - W/2); rect.setAttribute('y', n.y - H/2);
+      rect.setAttribute('width', W); rect.setAttribute('height', H);
+      rect.setAttribute('rx', 6);
+      rect.setAttribute('fill', bgColor);
+      rect.setAttribute('stroke', borderColor);
+      rect.setAttribute('stroke-width', 1.2);
+      g.appendChild(rect);
+
+      // Icon
+      const iconMap = { gateway: '🌐', host: '🖥️', router: '◉' };
+      const icon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      icon.setAttribute('x', n.x - W/2 + 10);
+      icon.setAttribute('y', n.y + 5);
+      icon.setAttribute('font-size', '14');
+      icon.textContent = iconMap[n.type] || '●';
+      g.appendChild(icon);
+
+      // Label (hostname or IP)
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('class', 'node-label');
+      label.setAttribute('x', n.x - W/2 + 28);
+      label.setAttribute('y', n.y - 2);
+      label.textContent = n.host.length > 14 ? n.ip : n.host;
+      g.appendChild(label);
+
+      // Sub-label (IP or type)
+      const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      sub.setAttribute('class', 'node-type-label');
+      sub.setAttribute('x', n.x - W/2 + 28);
+      sub.setAttribute('y', n.y + 12);
+      sub.textContent = n.ip === '*' ? 'unknown hop' : n.ip;
+      g.appendChild(sub);
+
+      // Status dot
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', n.x + W/2 - 10);
+      dot.setAttribute('cy', n.y);
+      dot.setAttribute('r', 3);
+      const dotColor = n.status === 'up' ? 'var(--green)' : n.status === 'down' ? 'var(--red)' : 'var(--gray)';
+      dot.setAttribute('fill', dotColor);
+      if (n.status === 'up') dot.setAttribute('class', 'live-indicator');
+      g.appendChild(dot);
+
+      g.addEventListener('click', () => selectNode(n.id));
+      nodesLayer.appendChild(g);
+    });
+  }
+
+  // ===== Detail panel =====
+  function selectNode(id) {
+    const n = findNode(id);
+    if (!n) return;
+
+    document.getElementById('detail-empty').style.display = 'none';
+    document.getElementById('detail-card').style.display = 'block';
+
+    document.getElementById('d-ip').textContent = n.ip;
+    document.getElementById('d-host').textContent = n.host;
+    document.getElementById('d-type').textContent = n.type;
+    document.getElementById('d-vlan').textContent = n.vlan;
+    document.getElementById('d-rtt').textContent = n.rtt;
+    document.getElementById('d-traffic').textContent = n.traffic;
+
+    const statusEl = document.getElementById('d-status');
+    statusEl.innerHTML = `<span class="badge ${n.status}">${n.status}</span>`;
+
+    const svcEl = document.getElementById('d-services');
+    svcEl.innerHTML = '';
+    if (n.services.length === 0) {
+      svcEl.innerHTML = '<span style="color: var(--muted); font-size: 11px;">no open ports detected</span>';
+    } else {
+      n.services.forEach(s => {
+        const chip = document.createElement('span');
+        chip.className = 'service-chip';
+        chip.textContent = s;
+        svcEl.appendChild(chip);
+      });
+    }
+
+    // Highlight selection
+    document.querySelectorAll('.node-group').forEach(g => {
+      g.classList.toggle('selected', g.getAttribute('data-id') === id);
+    });
+  }
+
+  // ===== Simulate live monitor (RTT fluctuation) =====
+  let monitorInterval = null;
+  document.getElementById('btn-monitor').addEventListener('click', (e) => {
+    if (monitorInterval) {
+      clearInterval(monitorInterval);
+      monitorInterval = null;
+      e.target.textContent = '⏱ Start Monitor';
+      e.target.style.background = '';
+      return;
+    }
+    e.target.textContent = '⏸ Stop Monitor';
+    e.target.style.background = 'var(--accent)';
+    e.target.style.color = 'white';
+
+    monitorInterval = setInterval(() => {
+      EDGES.forEach(edge => {
+        if (edge.latency == null) return;
+        const base = edge.latency;
+        edge.latency = Math.max(0.5, base + (Math.random() - 0.5) * base * 0.6);
+        edge.latency = +edge.latency.toFixed(1);
+      });
+      renderEdges();
+    }, 1500);
+  });
+
+  // ===== Init =====
+  renderEdges();
+  renderNodes();
+
+  // Stats
+  document.getElementById('stat-nodes').textContent = NODES.length;
+  document.getElementById('stat-edges').textContent = EDGES.length;
+  document.getElementById('stat-up').textContent = NODES.filter(n => n.status === 'up').length;
+  document.getElementById('stat-down').textContent = NODES.filter(n => n.status === 'down').length;
+  const upRtts = EDGES.filter(e => e.latency != null).map(e => e.latency);
+  if (upRtts.length) {
+    const avg = (upRtts.reduce((a,b) => a+b, 0) / upRtts.length).toFixed(1);
+    document.getElementById('stat-rtt').textContent = avg + ' ms';
+  }
+</script>
+</body>
+</html>

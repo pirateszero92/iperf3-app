@@ -8,9 +8,18 @@ const DEFAULT = {
   bandwidth: '', buffer_length: '',
 }
 
-export default function ClientMode({ onComplete, onRunTrace }) {
-  const [cfg, setCfg]       = useState(DEFAULT)
+export default function ClientMode({ onComplete, onRunTrace, initialHost }) {
+  const [cfg, setCfg]       = useState(() => ({
+    ...DEFAULT,
+    host: initialHost || '',
+  }))
   const [status, setStatus] = useState('idle')  // idle | running | complete | error
+
+  useEffect(() => {
+    if (initialHost) {
+      setCfg(c => ({ ...c, host: initialHost }))
+    }
+  }, [initialHost])
   const [liveData, setLiveData]   = useState([])
   const [logs, setLogs]           = useState([])
   const [summary, setSummary]     = useState(null)
